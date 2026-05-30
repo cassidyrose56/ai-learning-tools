@@ -3816,7 +3816,7 @@ git commit -m "docs: confirm end-to-end flow in README"
 ## Self-review notes (from the planner)
 
 - **Spec coverage check:** every component from the spec maps to a task — Settings + retry caps (2.2 / `config.py`) and editorial constants (2.2 / `pedagogy.py`, grown by Tasks 4.1 and 8.2), schemas (2.3), generator + prompts (3.1/3.2), evaluator with v1 snapshot prompts + band-to-grade mapping + transport retries (1.1 + 4.1), pipeline + retries + evaluator-unavailable short-circuit (5.1), orchestrator + SSE (6.1/6.2), presets (6.2), docx (7.1), pdf with `split_into_pages` + drawing box + font sizes (8.1/8.2), single-file export route (8.3), bundle zip (9.1), RequestForm with drawing-box helper text (11.1), StoryList + bundle buttons (12.2), StoryCard with warning badge + helper text (12.1), PdfPreviewModal with embed/fallback/Esc/backdrop (13.1), App wiring (14.1), manual smoke (14.2).
-- **Tests cover all spec testing-strategy bullets:** evaluator band-mapping + prompt-version selectability + transport retries + "evaluator unavailable" (4.1); generator fiction-only-name and feedback-injection and word-count doubling (3.2); pipeline four key paths (5.1); api SSE event sequence and presets (6.2); docx round-trip + ignored layout fields (7.1); `split_into_pages` exact-count + sentence boundaries + balance (8.1); PDF page count + signature + drawing-box rectangle + font-size table (8.2); bundle zip filename + content (9.1); RequestForm validation + custom topics + drawing-box flag (11.1); StoryList feed + bundle calls (12.2); PdfPreviewModal flow + Esc + fallback + reuse-blob (13.1).
+- **Tests cover all spec testing-strategy bullets:** evaluator band-mapping + prompt-version selectability + transport retries + "evaluator unavailable" + revision-guidance-vs-scaffolding-needed audience separation (4.1); generator fiction-only-name and feedback-injection and word-count doubling (3.2); pipeline four key paths (5.1); api SSE event sequence and presets (6.2); docx round-trip + ignored layout fields (7.1); `split_into_pages` exact-count + sentence boundaries + balance (8.1); PDF page count + signature + drawing-box rectangle + font-size table (8.2); bundle zip filename + content (9.1); RequestForm validation + custom topics + drawing-box flag (11.1); StoryList feed + bundle calls (12.2); PdfPreviewModal flow + Esc + fallback + reuse-blob (13.1).
 - **Sequencing:** the v1 rubric snapshot already lives at
   `backend/app/evaluator_prompts/grade-level/v1/{system,user}.txt`
   (committed during repo setup, byte-identical to upstream). Task 4.1
@@ -3831,6 +3831,23 @@ git commit -m "docs: confirm end-to-end flow in README"
   frontend types, story-card state). And `WORDS_PER_PAGE` /
   `FONT_SIZES` / `GRADE_TO_BAND` all live in `app/pedagogy.py` —
   consumer modules import them, never redeclare.
+- **Evaluator JSON contract split into two audiences (Task 4.1):** the
+  upstream Learning Commons rubric's `scaffolding_needed` field is
+  narrowly defined as teacher-facing supports (pictures, pre-teaching,
+  read-aloud) that let students at a *lower* `alternative_grade` band
+  still engage with the text. Feeding that string back to Claude as
+  "revise the next draft" was both wrong-audience (Claude can't show a
+  picture) and asymmetric (empty when the text is too easy). The JSON
+  footer in `evaluator.py` now also asks Gemini for a separate
+  `revision_guidance` field — concrete suggestions for revising the
+  text itself, symmetric in direction. `_build_feedback` composes the
+  Claude-facing feedback string from `reasoning + alternative_grade +
+  revision_guidance` and deliberately **excludes** `scaffolding_needed`,
+  which is still parsed off the JSON for a future teacher-facing
+  surface (see docs/v2-ideas.md "Scaffolding playbook"). The
+  pipeline's contract is unchanged — it still treats `result.feedback`
+  as opaque text and `"evaluator unavailable"` as the short-circuit
+  sentinel — so no Phase 5+ code blocks need adaptation.
 
 ---
 
