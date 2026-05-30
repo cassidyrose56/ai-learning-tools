@@ -80,3 +80,58 @@ Risks worth flagging up-front:
 - **Latency.** Image generation will dwarf the current per-story time.
   The SSE pipeline needs a new `image_ready` event so the UI can show
   text first and fill in images as they arrive.
+
+## Pedagogy table extensions
+
+v1 collects editorial constants (per-grade words-per-page,
+per-grade PDF font sizes, single-grade → Learning Commons grade band)
+into `backend/app/pedagogy.py` so they live in one reviewable place
+instead of being scattered through `config.py`, `evaluator.py`, and
+`export.py`. Once that table exists, several adjacent ideas open up:
+
+### Richer per-grade rules the table could hold
+
+- **Sentence-length targets.** Max words per sentence per grade
+  (informed by `vendor/evaluators` sentence-structure rubric thresholds).
+  The generator's Jinja template would inject the target, and we'd
+  have a cheap structural post-check before paying for an LLM-as-judge
+  retry.
+- **Vocabulary allow/avoid lists.** Per-grade word lists (e.g.,
+  Dolch sight words for K–3; common subject-academic words for grades
+  4–5). Used two ways: seed the generator prompt with "prefer these,
+  avoid those," and run a deterministic post-check that flags any
+  avoid-list word that slipped through.
+- **Scaffolding playbook.** Mapping from "Gemini said this band is
+  too hard" to specific transformations (define vocabulary inline,
+  shorten sentences, add picture support). Currently the evaluator
+  returns free-form `scaffolding_needed`; converting it into a small
+  enum of supported transformations lets the generator apply them
+  more reliably on retry.
+- **Read-aloud-vs-independent thresholds.** Each grade has a different
+  word-count range that's appropriate for read-aloud time vs.
+  independent reading. A teacher could flag intent and the WPP table
+  could shift accordingly.
+
+### Workflow ideas the table unlocks
+
+- **Pedagogy bumps as their own commits.** Because pedagogy is one
+  file, a teacher / curriculum specialist can review diffs against
+  this file without reading any Python that consumes it. Cleaner
+  review surface than "find every magic number in the codebase."
+- **Per-classroom profiles.** Multiple pedagogy *profiles* selectable
+  via env or per-request — e.g., a tighter vocabulary band for ELL
+  students, a higher word-count target for accelerated readers.
+  Implementation: rename the file's top-level constants to attributes
+  of a `Profile` and load the active profile by name.
+- **Admin UI over pedagogy values.** Once the table is structured,
+  an authenticated admin route could expose it as a form — change
+  the words-per-page for grade 3, see the next generation reflect
+  it, no code change. Risky because pedagogy decisions are
+  load-bearing for output quality; this would need versioning and
+  an "active profile" history.
+- **Cross-reference with `vendor/evaluators` thresholds.** The
+  upstream sentence-structure rubric publishes numeric guidelines
+  per grade (e.g., grade-3 avg sentence length < 12 words). When
+  we add more evaluators in v2, the pedagogy table should align
+  with those thresholds so generation and evaluation aren't fighting
+  each other.

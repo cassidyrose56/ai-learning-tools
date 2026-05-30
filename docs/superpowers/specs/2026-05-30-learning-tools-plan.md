@@ -229,18 +229,22 @@ git add backend/pyproject.toml backend/uv.lock backend/app backend/tests
 git commit -m "chore(backend): initialize uv project with FastAPI + test deps"
 ```
 
-### Task 2.2: `config.py` — settings + `WORDS_PER_PAGE`
+### Task 2.2: `config.py` (Settings + retry caps) and `pedagogy.py` (editorial tables)
+
+Two files because they belong to two different categories. `config.py` is env-driven runtime settings (API keys, model IDs, prompt-version selector). `pedagogy.py` holds editorial constants the operator does not tune from outside the code — pedagogy choices like "how many words per page is on-level for grade 3." Keeping them split prevents the file from becoming a junk drawer as later phases add `FONT_SIZES`, the grade-to-band mapping, and similar tables.
 
 **Files:**
 - Create: `backend/app/config.py`
+- Create: `backend/app/pedagogy.py`
 - Create: `backend/tests/test_config.py`
+- Create: `backend/tests/test_pedagogy.py`
 
-- [ ] **Step 1: Write failing test**
+- [ ] **Step 1: Write failing tests**
 
-`backend/tests/test_config.py`:
+`backend/tests/test_pedagogy.py`:
 
 ```python
-from app.config import WORDS_PER_PAGE, MAX_RETRIES, EVALUATOR_TRANSPORT_RETRIES, get_settings
+from app.pedagogy import WORDS_PER_PAGE
 
 
 def test_words_per_page_doubles_when_drawing_box_off():
@@ -248,6 +252,12 @@ def test_words_per_page_doubles_when_drawing_box_off():
         on = WORDS_PER_PAGE[(level, True)]
         off = WORDS_PER_PAGE[(level, False)]
         assert off == on * 2, f"level {level}: {off} != 2*{on}"
+```
+
+`backend/tests/test_config.py`:
+
+```python
+from app.config import MAX_RETRIES, EVALUATOR_TRANSPORT_RETRIES, get_settings
 
 
 def test_retry_caps():
@@ -275,19 +285,34 @@ def test_settings_evaluator_prompt_version_overridable(monkeypatch):
 
 - [ ] **Step 2: Run, confirm failure**
 
-Run: `cd backend && uv run pytest tests/test_config.py -v`
-Expected: ImportError / ModuleNotFoundError on `app.config`.
+Run: `cd backend && uv run pytest tests/test_config.py tests/test_pedagogy.py -v`
+Expected: `ModuleNotFoundError` on `app.config` and `app.pedagogy`.
 
-- [ ] **Step 3: Implement `config.py`**
+- [ ] **Step 3: Implement `pedagogy.py`**
 
-`backend/app/config.py`:
+`backend/app/pedagogy.py`:
 
 ```python
-from functools import lru_cache
-from pydantic_settings import BaseSettings, SettingsConfigDict
-
+# Editorial / pedagogy constants. Things that encode "what counts as
+# on-level for grade N" — not things the operator tunes via env or UI.
+#
+# Coming in later v1 phases (drop into THIS file when they land — don't
+# scatter them across consumer modules):
+#   - GRADE_TO_BAND   single-grade -> Learning Commons band, added in
+#                     Task 4.1 (evaluator)
+#   - FONT_SIZES      per-grade PDF body font, added in Task 8.2 (renderer)
+#
+# v2 brainstorms (see docs/v2-ideas.md "Pedagogy table extensions"):
+#   - Scaffolding playbook    (when to add definitions, picture support, etc.)
+#   - Vocabulary allow/avoid  (per-grade word lists)
+#   - Sentence-length targets (per-grade max sentence length)
 
 WORDS_PER_PAGE: dict[tuple[str, bool], int] = {
+    # (reading_level, include_drawing_box): words per page
+    #
+    # Box-on values match conventional leveled-reader page counts
+    # (which assume illustration space at the top of the page).
+    # Box-off values are doubled to fill the area freed up by removing the box.
     ("K", True):  20,  ("K", False):  40,
     ("1", True):  40,  ("1", False):  80,
     ("2", True):  70,  ("2", False): 140,
@@ -295,6 +320,19 @@ WORDS_PER_PAGE: dict[tuple[str, bool], int] = {
     ("4", True): 150,  ("4", False): 300,
     ("5", True): 200,  ("5", False): 400,
 }
+```
+
+- [ ] **Step 4: Implement `config.py`**
+
+`backend/app/config.py`:
+
+```python
+from functools import lru_cache
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# Editorial / pedagogy constants (WORDS_PER_PAGE, FONT_SIZES, grade-to-band,
+# etc.) live in app/pedagogy.py — keep them out of here so config.py stays
+# the home for env-driven runtime settings only.
 
 MAX_RETRIES = 3
 EVALUATOR_TRANSPORT_RETRIES = 3
@@ -316,16 +354,17 @@ def get_settings() -> Settings:
     return Settings()
 ```
 
-- [ ] **Step 4: Run, confirm pass**
+- [ ] **Step 5: Run, confirm pass**
 
-Run: `cd backend && uv run pytest tests/test_config.py -v`
-Expected: 3 passed.
+Run: `cd backend && uv run pytest tests/test_config.py tests/test_pedagogy.py -v`
+Expected: 5 passed.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
-git add backend/app/config.py backend/tests/test_config.py
-git commit -m "feat(backend): add config with WORDS_PER_PAGE lookup and Settings"
+git add backend/app/config.py backend/app/pedagogy.py \
+        backend/tests/test_config.py backend/tests/test_pedagogy.py
+git commit -m "feat(backend): add pedagogy.py (WORDS_PER_PAGE) and config.py (Settings)"
 ```
 
 ### Task 2.3: `schemas.py` — request/response/event models
@@ -628,7 +667,7 @@ def test_feedback_appears_in_revision_prompt():
 
 
 def test_target_words_box_on_vs_off():
-    from app.config import WORDS_PER_PAGE
+    from app.pedagogy import WORDS_PER_PAGE
 
     assert WORDS_PER_PAGE[("3", True)] == 100
     assert WORDS_PER_PAGE[("3", False)] == 200
@@ -773,11 +812,28 @@ git commit -m "feat(backend): add generator with Jinja2 prompt and Anthropic cal
 **Files:**
 - Create: `backend/app/evaluator.py`
 - Create: `backend/tests/test_evaluator.py`
+- Modify: `backend/app/pedagogy.py` (add `GRADE_TO_BAND`)
 
 The grade-level rubric prompts already live at
 `backend/app/evaluator_prompts/grade-level/v1/{system,user}.txt` — they were
 snapshotted from the submodule during repo setup. No fixture rubric is
 needed; tests read the real v1 snapshot.
+
+- [ ] **Step 0: Add `GRADE_TO_BAND` to `pedagogy.py`**
+
+Insert into `backend/app/pedagogy.py`, below `WORDS_PER_PAGE`:
+
+```python
+# Single-grade -> Learning Commons grade band. The grade-level rubric
+# only emits bands (K-1, 2-3, 4-5, 6-8, 9-10, 11-CCR); our UI offers
+# single grades. evaluator.py expands the teacher's target grade
+# through this table before comparing against the judge's verdict.
+GRADE_TO_BAND: dict[str, str] = {
+    "K": "K-1", "1": "K-1",
+    "2": "2-3", "3": "2-3",
+    "4": "4-5", "5": "4-5",
+}
+```
 
 - [ ] **Step 1: Write failing tests**
 
@@ -947,22 +1003,16 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_google_genai import ChatGoogleGenerativeAI
 
 from app.config import EVALUATOR_TRANSPORT_RETRIES, get_settings
+from app.pedagogy import GRADE_TO_BAND
 from app.schemas import EvalResult
 
 log = logging.getLogger(__name__)
 
 _PROMPT_ROOT = Path(__file__).parent / "evaluator_prompts"
 
-# Single-grade -> Learning Commons band. The rubric only emits these bands.
-_GRADE_TO_BAND: dict[str, str] = {
-    "K": "K-1", "1": "K-1",
-    "2": "2-3", "3": "2-3",
-    "4": "4-5", "5": "4-5",
-}
-
 
 def _band_for_grade(grade: str) -> str:
-    return _GRADE_TO_BAND[grade]
+    return GRADE_TO_BAND[grade]
 
 
 def _active_version() -> str:
@@ -1058,7 +1108,7 @@ Expected: 8 passed.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add backend/app/evaluator.py backend/tests/test_evaluator.py
+git add backend/app/evaluator.py backend/app/pedagogy.py backend/tests/test_evaluator.py
 git commit -m "feat(backend): add Gemini evaluator with band-to-grade mapping"
 ```
 
@@ -1223,7 +1273,8 @@ import uuid
 from dataclasses import dataclass
 from typing import Awaitable, Callable
 
-from app.config import MAX_RETRIES, WORDS_PER_PAGE
+from app.config import MAX_RETRIES
+from app.pedagogy import WORDS_PER_PAGE
 from app.schemas import EvalResult
 
 GenerateFn = Callable[..., Awaitable[str]]
@@ -1900,7 +1951,8 @@ Append to `backend/tests/test_export.py`:
 ```python
 from pypdf import PdfReader
 
-from app.export import render_pdf, FONT_SIZES
+from app.export import render_pdf
+from app.pedagogy import FONT_SIZES
 
 
 def test_pdf_has_correct_page_count():
@@ -1947,9 +1999,24 @@ def test_pdf_font_size_per_reading_level():
 - [ ] **Step 2: Run, confirm failure**
 
 Run: `cd backend && uv run pytest tests/test_export.py -v`
-Expected: failures on the new tests (`render_pdf` / `FONT_SIZES` not defined).
+Expected: failures on the new tests (`render_pdf` not defined and/or `FONT_SIZES` not yet in `app.pedagogy`).
 
-- [ ] **Step 3: Implement `render_pdf`**
+- [ ] **Step 3a: Add `FONT_SIZES` to `pedagogy.py`**
+
+Insert into `backend/app/pedagogy.py`, below `WORDS_PER_PAGE`:
+
+```python
+FONT_SIZES: dict[str, int] = {
+    # Per-grade PDF body font, in points. Larger for early readers;
+    # plateaus at grade 4 because 14pt is already comfortable for grade-5
+    # text on letter-size pages.
+    "K": 24, "1": 20, "2": 18, "3": 16, "4": 14, "5": 14,
+}
+```
+
+(Remove the matching `FONT_SIZES` declaration from `export.py` if you initially added it there — there is one source of truth.)
+
+- [ ] **Step 3b: Implement `render_pdf`**
 
 Append to `backend/app/export.py`:
 
@@ -1958,9 +2025,7 @@ from reportlab.lib.pagesizes import LETTER
 from reportlab.lib.units import inch
 from reportlab.pdfgen import canvas as _canvas
 
-FONT_SIZES: dict[str, int] = {
-    "K": 24, "1": 20, "2": 18, "3": 16, "4": 14, "5": 14,
-}
+from app.pedagogy import FONT_SIZES
 
 _MARGIN = 0.75 * inch
 _BOX_FRACTION = 0.45  # drawing box occupies top 45% of page
@@ -2033,7 +2098,7 @@ Expected: all tests pass.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add backend/app/export.py backend/tests/test_export.py
+git add backend/app/export.py backend/app/pedagogy.py backend/tests/test_export.py
 git commit -m "feat(backend): add reportlab PDF renderer with layout and drawing box"
 ```
 

@@ -1,15 +1,9 @@
 from functools import lru_cache
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-
-WORDS_PER_PAGE: dict[tuple[str, bool], int] = {
-    ("K", True):  20,  ("K", False):  40,
-    ("1", True):  40,  ("1", False):  80,
-    ("2", True):  70,  ("2", False): 140,
-    ("3", True): 100,  ("3", False): 200,
-    ("4", True): 150,  ("4", False): 300,
-    ("5", True): 200,  ("5", False): 400,
-}
+# Editorial / pedagogy constants (WORDS_PER_PAGE, FONT_SIZES, grade-to-band,
+# etc.) live in app/pedagogy.py — keep them out of here so config.py stays
+# the home for env-driven runtime settings only.
 
 MAX_RETRIES = 3
 EVALUATOR_TRANSPORT_RETRIES = 3
