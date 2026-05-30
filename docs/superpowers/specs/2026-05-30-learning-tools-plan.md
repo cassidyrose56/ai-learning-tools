@@ -3792,9 +3792,22 @@ git commit -m "docs: confirm end-to-end flow in README"
 
 ## Self-review notes (from the planner)
 
-- **Spec coverage check:** every component from the spec maps to a task — config + WPP (2.2), schemas (2.3), generator + prompts (3.1/3.2), evaluator with vendor submodule (1.1 + 4.1), pipeline + retries + evaluator-unavailable short-circuit (5.1), orchestrator + SSE (6.1/6.2), presets (6.2), docx (7.1), pdf with `split_into_pages` + drawing box + font sizes (8.1/8.2), single-file export route (8.3), bundle zip (9.1), RequestForm with drawing-box helper text (11.1), StoryList + bundle buttons (12.2), StoryCard with warning badge + helper text (12.1), PdfPreviewModal with embed/fallback/Esc/backdrop (13.1), App wiring (14.1), manual smoke (14.2).
-- **Tests cover all spec testing-strategy bullets:** evaluator transport retries + rubric load + "evaluator unavailable" (4.1); generator fiction-only-name and feedback-injection and word-count doubling (3.2); pipeline four key paths (5.1); api SSE event sequence and presets (6.2); docx round-trip + ignored layout fields (7.1); `split_into_pages` exact-count + sentence boundaries + balance (8.1); PDF page count + signature + drawing-box rectangle + font-size table (8.2); bundle zip filename + content (9.1); RequestForm validation + custom topics + drawing-box flag (11.1); StoryList feed + bundle calls (12.2); PdfPreviewModal flow + Esc + fallback + reuse-blob (13.1).
-- **Sequencing:** the rubric path discovery in 1.1 step 2 must be done before 4.1 implementation, otherwise `_RUBRIC_PATH` may point at the wrong file. This is called out in the 4.1 step-4 note.
+- **Spec coverage check:** every component from the spec maps to a task — Settings + retry caps (2.2 / `config.py`) and editorial constants (2.2 / `pedagogy.py`, grown by Tasks 4.1 and 8.2), schemas (2.3), generator + prompts (3.1/3.2), evaluator with v1 snapshot prompts + band-to-grade mapping + transport retries (1.1 + 4.1), pipeline + retries + evaluator-unavailable short-circuit (5.1), orchestrator + SSE (6.1/6.2), presets (6.2), docx (7.1), pdf with `split_into_pages` + drawing box + font sizes (8.1/8.2), single-file export route (8.3), bundle zip (9.1), RequestForm with drawing-box helper text (11.1), StoryList + bundle buttons (12.2), StoryCard with warning badge + helper text (12.1), PdfPreviewModal with embed/fallback/Esc/backdrop (13.1), App wiring (14.1), manual smoke (14.2).
+- **Tests cover all spec testing-strategy bullets:** evaluator band-mapping + prompt-version selectability + transport retries + "evaluator unavailable" (4.1); generator fiction-only-name and feedback-injection and word-count doubling (3.2); pipeline four key paths (5.1); api SSE event sequence and presets (6.2); docx round-trip + ignored layout fields (7.1); `split_into_pages` exact-count + sentence boundaries + balance (8.1); PDF page count + signature + drawing-box rectangle + font-size table (8.2); bundle zip filename + content (9.1); RequestForm validation + custom topics + drawing-box flag (11.1); StoryList feed + bundle calls (12.2); PdfPreviewModal flow + Esc + fallback + reuse-blob (13.1).
+- **Sequencing:** the v1 rubric snapshot already lives at
+  `backend/app/evaluator_prompts/grade-level/v1/{system,user}.txt`
+  (committed during repo setup, byte-identical to upstream). Task 4.1
+  reads from there directly. The vendor submodule remains read-only.
+- **Cross-cutting refactors applied after the initial spec:** the
+  evaluator was switched from OpenAI to Gemini 2.5 Pro (via
+  `langchain-google-genai`) to match the upstream calibration. The
+  Gemini judge returns rubric *bands* (`K-1, 2-3, ...`), so Task 4.1
+  introduces a `GRADE_TO_BAND` mapping (added to `pedagogy.py` as
+  Step 0 of that task). `EvalResult.matched` was renamed to
+  `EvalResult.appropriate` everywhere it appears (schema, SSE wire,
+  frontend types, story-card state). And `WORDS_PER_PAGE` /
+  `FONT_SIZES` / `GRADE_TO_BAND` all live in `app/pedagogy.py` —
+  consumer modules import them, never redeclare.
 
 ---
 
