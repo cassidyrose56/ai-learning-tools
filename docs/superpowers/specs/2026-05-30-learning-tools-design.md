@@ -155,8 +155,15 @@ PRESETS = {
   (`ChatGoogleGenerativeAI(model="gemini-2.5-pro", temperature=0.25,
   timeout=120)`), mirroring the upstream notebook. The judge returns
   structured JSON `{reasoning, grade, alternative_grade,
-  scaffolding_needed}` where `grade` and `alternative_grade` are **grade
-  *bands*** (`K-1, 2-3, 4-5, 6-8, 9-10, 11-CCR`), not single grades.
+  scaffolding_needed, revision_guidance}` where `grade` and
+  `alternative_grade` are **grade *bands*** (`K-1, 2-3, 4-5, 6-8, 9-10,
+  11-CCR`), not single grades. `scaffolding_needed` is the upstream
+  rubric's teacher-facing supports (pictures, pre-teaching, read-aloud)
+  for reading the text at `alternative_grade`; `revision_guidance` is a
+  field we add in our JSON footer for the Claude feedback loop —
+  concrete suggestions for revising the text to better hit the target
+  student grade, symmetric in direction (used whether text is too hard
+  or too easy).
 
   Band-to-grade mapping for `appropriate`: we expand the teacher's single-grade
   target (`K|1|2|3|4|5`) to the band the rubric uses for that grade
@@ -165,8 +172,13 @@ PRESETS = {
   the wire carries the returned band string (e.g. `"2-3"`) — we kept the
   field name for back-compat with SSE events but the value is a band, not
   a single grade. On a mismatch, `feedback` is built from
-  `reasoning + alternative_grade + scaffolding_needed` so the revision
+  `reasoning + alternative_grade + revision_guidance` so the revision
   prompt to Claude has actionable diagnosis, not just chain-of-thought.
+  `scaffolding_needed` is deliberately *not* included in `feedback` —
+  it's teacher-facing and only meaningful when going *down* a band, so
+  feeding it back to Claude as generic revision guidance would be both
+  wrong-audience and asymmetric. It's still parsed off the JSON for a
+  future teacher-facing surface.
 
   Transport behavior unchanged: retries the Gemini call up to
   `EVALUATOR_TRANSPORT_RETRIES` times with exponential backoff (0.5s, 1s,
@@ -433,10 +445,12 @@ TDD: write tests first for each module.
 
 - **`test_evaluator.py`** — Mock `ChatGoogleGenerativeAI`. Verifies: parses
   well-formed judge JSON (`{reasoning, grade, alternative_grade,
-  scaffolding_needed}`) into `EvalResult`; band-to-grade mapping
-  (`K|1 → K-1`, `2|3 → 2-3`, `4|5 → 4-5`) determines `appropriate`; revision
-  feedback string contains `alternative_grade` + `scaffolding_needed`, not
-  just `reasoning`; retries 3× on transient errors with backoff; returns
+  scaffolding_needed, revision_guidance}`) into `EvalResult`; band-to-grade
+  mapping (`K|1 → K-1`, `2|3 → 2-3`, `4|5 → 4-5`) determines `appropriate`;
+  revision feedback string contains `alternative_grade` +
+  `revision_guidance`, not just `reasoning`, and explicitly **excludes**
+  `scaffolding_needed` (which is teacher-facing, not for Claude); retries
+  3× on transient errors with backoff; returns
   `"evaluator unavailable"` after exhausting transport retries; reads the
   system + user prompts from
   `backend/app/evaluator_prompts/grade-level/<version>/` (default `v1`).

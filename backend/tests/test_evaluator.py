@@ -54,6 +54,7 @@ async def test_parses_appropriate_band_response(monkeypatch):
         "grade": "2-3",
         "alternative_grade": "K-1",
         "scaffolding_needed": "Pre-teach 'soccer'.",
+        "revision_guidance": "Could trim one sentence for tighter pacing.",
     }
     monkeypatch.setattr(eval_mod, "_llm", lambda: _mock_llm([_ai_message(payload)]))
 
@@ -61,7 +62,9 @@ async def test_parses_appropriate_band_response(monkeypatch):
     assert result.appropriate is True
     assert result.predicted_grade == "2-3"
     assert "K-1" in result.feedback
-    assert "Pre-teach" in result.feedback
+    assert "Could trim" in result.feedback
+    # scaffolding_needed is teacher-facing and must NOT be fed back to Claude.
+    assert "Pre-teach" not in result.feedback
 
 
 async def test_parses_mismatch_response(monkeypatch):
@@ -69,7 +72,8 @@ async def test_parses_mismatch_response(monkeypatch):
         "reasoning": "Sentences too long.",
         "grade": "4-5",
         "alternative_grade": "2-3",
-        "scaffolding_needed": "Chunk into shorter sentences.",
+        "scaffolding_needed": "Read aloud with vocabulary support.",
+        "revision_guidance": "Chunk into shorter sentences and replace 'velocity' with 'speed'.",
     }
     monkeypatch.setattr(eval_mod, "_llm", lambda: _mock_llm([_ai_message(payload)]))
 
@@ -78,6 +82,8 @@ async def test_parses_mismatch_response(monkeypatch):
     assert result.predicted_grade == "4-5"
     assert "Chunk into shorter sentences" in result.feedback
     assert "Sentences too long" in result.feedback
+    # scaffolding_needed is teacher-facing and must NOT be fed back to Claude.
+    assert "Read aloud" not in result.feedback
 
 
 async def test_retries_three_times_then_gives_up(monkeypatch):
@@ -105,6 +111,7 @@ async def test_malformed_json_treated_as_transient(monkeypatch):
         "grade": "2-3",
         "alternative_grade": "K-1",
         "scaffolding_needed": "",
+        "revision_guidance": "",
     }
     llm = _mock_llm([_ai_message("not json"), _ai_message(good)])
     monkeypatch.setattr(eval_mod, "_llm", lambda: llm)
@@ -129,7 +136,8 @@ async def test_prompt_version_selectable(monkeypatch, tmp_path):
 
     monkeypatch.setattr(eval_mod, "_active_version", lambda: "v2")
     payload = {
-        "reasoning": "x", "grade": "2-3", "alternative_grade": "K-1", "scaffolding_needed": "",
+        "reasoning": "x", "grade": "2-3", "alternative_grade": "K-1",
+        "scaffolding_needed": "", "revision_guidance": "",
     }
     captured: list = []
 

@@ -47,16 +47,21 @@ _BACKOFF = [0.5, 1.0, 2.0]
 
 
 def _build_feedback(payload: dict) -> str:
+    # `scaffolding_needed` (from upstream rubric) describes teacher-facing
+    # supports for reading the text at the lower `alternative_grade` band —
+    # it's not generator-revision guidance, and we deliberately don't feed
+    # it back to Claude. We ask Gemini for a separate `revision_guidance`
+    # field in the JSON footer and use that for the regenerator prompt.
     reasoning = str(payload.get("reasoning", "")).strip()
     alt = str(payload.get("alternative_grade", "")).strip()
-    scaffolding = str(payload.get("scaffolding_needed", "")).strip()
+    revision = str(payload.get("revision_guidance", "")).strip()
     parts: list[str] = []
     if reasoning:
         parts.append(f"Reasoning: {reasoning}")
     if alt:
         parts.append(f"Closer fit was band {alt}.")
-    if scaffolding:
-        parts.append(f"To make the text accessible: {scaffolding}")
+    if revision:
+        parts.append(f"Suggested revisions: {revision}")
     return " ".join(parts)
 
 
@@ -68,9 +73,19 @@ async def evaluate_grade_level(text: str, target_reading_level: str) -> EvalResu
         f"Target student grade: {target_reading_level}\n\n"
         f"Procedure:\n{user_prompt}\n\n"
         f"Text to evaluate:\n{text}\n\n"
-        "Return JSON only, no prose: "
+        "Return JSON only, no prose, with these fields: "
         '{"reasoning": "...", "grade": "<band>", '
-        '"alternative_grade": "<band>", "scaffolding_needed": "..."}'
+        '"alternative_grade": "<band>", "scaffolding_needed": "...", '
+        '"revision_guidance": "..."}. '
+        "`scaffolding_needed` is the upstream rubric's teacher-facing "
+        "supports for reading at `alternative_grade` (pictures, "
+        "pre-teaching, read-aloud, etc.). `revision_guidance` is "
+        "separate: concrete suggestions for revising the TEXT itself "
+        "(shorter sentences, simpler vocabulary, fewer concepts, or — "
+        "if the text is too easy — longer sentences, richer vocabulary) "
+        "so the next draft better hits the target student grade. "
+        "Populate `revision_guidance` whether the text is currently too "
+        "hard OR too easy."
     )
     expected_band = _band_for_grade(target_reading_level)
     llm = _llm()

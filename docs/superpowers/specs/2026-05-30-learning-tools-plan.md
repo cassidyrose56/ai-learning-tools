@@ -891,6 +891,7 @@ async def test_parses_appropriate_band_response(monkeypatch):
         "grade": "2-3",
         "alternative_grade": "K-1",
         "scaffolding_needed": "Pre-teach 'soccer'.",
+        "revision_guidance": "Could trim one sentence for tighter pacing.",
     }
     monkeypatch.setattr(eval_mod, "_llm", lambda: _mock_llm([_ai_message(payload)]))
 
@@ -898,7 +899,9 @@ async def test_parses_appropriate_band_response(monkeypatch):
     assert result.appropriate is True
     assert result.predicted_grade == "2-3"
     assert "K-1" in result.feedback
-    assert "Pre-teach" in result.feedback
+    assert "Could trim" in result.feedback
+    # scaffolding_needed is teacher-facing and must NOT be fed back to Claude.
+    assert "Pre-teach" not in result.feedback
 
 
 async def test_parses_mismatch_response(monkeypatch):
@@ -906,7 +909,8 @@ async def test_parses_mismatch_response(monkeypatch):
         "reasoning": "Sentences too long.",
         "grade": "4-5",
         "alternative_grade": "2-3",
-        "scaffolding_needed": "Chunk into shorter sentences.",
+        "scaffolding_needed": "Read aloud with vocabulary support.",
+        "revision_guidance": "Chunk into shorter sentences and replace 'velocity' with 'speed'.",
     }
     monkeypatch.setattr(eval_mod, "_llm", lambda: _mock_llm([_ai_message(payload)]))
 
@@ -915,6 +919,8 @@ async def test_parses_mismatch_response(monkeypatch):
     assert result.predicted_grade == "4-5"
     assert "Chunk into shorter sentences" in result.feedback
     assert "Sentences too long" in result.feedback
+    # scaffolding_needed is teacher-facing and must NOT be fed back to Claude.
+    assert "Read aloud" not in result.feedback
 
 
 async def test_retries_three_times_then_gives_up(monkeypatch):
@@ -942,6 +948,7 @@ async def test_malformed_json_treated_as_transient(monkeypatch):
         "grade": "2-3",
         "alternative_grade": "K-1",
         "scaffolding_needed": "",
+        "revision_guidance": "",
     }
     monkeypatch.setattr(
         eval_mod,
@@ -965,7 +972,8 @@ async def test_prompt_version_selectable(monkeypatch, tmp_path):
 
     monkeypatch.setattr(eval_mod, "_active_version", lambda: "v2")
     payload = {
-        "reasoning": "x", "grade": "2-3", "alternative_grade": "K-1", "scaffolding_needed": "",
+        "reasoning": "x", "grade": "2-3", "alternative_grade": "K-1",
+        "scaffolding_needed": "", "revision_guidance": "",
     }
     captured: list = []
 
@@ -1042,16 +1050,21 @@ _BACKOFF = [0.5, 1.0, 2.0]
 
 
 def _build_feedback(payload: dict) -> str:
+    # `scaffolding_needed` (from upstream rubric) describes teacher-facing
+    # supports for reading the text at the lower `alternative_grade` band —
+    # it's not generator-revision guidance, and we deliberately don't feed
+    # it back to Claude. We ask Gemini for a separate `revision_guidance`
+    # field in the JSON footer and use that for the regenerator prompt.
     reasoning = str(payload.get("reasoning", "")).strip()
     alt = str(payload.get("alternative_grade", "")).strip()
-    scaffolding = str(payload.get("scaffolding_needed", "")).strip()
+    revision = str(payload.get("revision_guidance", "")).strip()
     parts: list[str] = []
     if reasoning:
         parts.append(f"Reasoning: {reasoning}")
     if alt:
         parts.append(f"Closer fit was band {alt}.")
-    if scaffolding:
-        parts.append(f"To make the text accessible: {scaffolding}")
+    if revision:
+        parts.append(f"Suggested revisions: {revision}")
     return " ".join(parts)
 
 
@@ -1063,9 +1076,19 @@ async def evaluate_grade_level(text: str, target_reading_level: str) -> EvalResu
         f"Target student grade: {target_reading_level}\n\n"
         f"Procedure:\n{user_prompt}\n\n"
         f"Text to evaluate:\n{text}\n\n"
-        "Return JSON only, no prose: "
+        "Return JSON only, no prose, with these fields: "
         '{"reasoning": "...", "grade": "<band>", '
-        '"alternative_grade": "<band>", "scaffolding_needed": "..."}'
+        '"alternative_grade": "<band>", "scaffolding_needed": "...", '
+        '"revision_guidance": "..."}. '
+        "`scaffolding_needed` is the upstream rubric's teacher-facing "
+        "supports for reading at `alternative_grade` (pictures, "
+        "pre-teaching, read-aloud, etc.). `revision_guidance` is "
+        "separate: concrete suggestions for revising the TEXT itself "
+        "(shorter sentences, simpler vocabulary, fewer concepts, or — "
+        "if the text is too easy — longer sentences, richer vocabulary) "
+        "so the next draft better hits the target student grade. "
+        "Populate `revision_guidance` whether the text is currently too "
+        "hard OR too easy."
     )
     expected_band = _band_for_grade(target_reading_level)
 

@@ -99,9 +99,12 @@ instead of being scattered through `config.py`, `evaluator.py`, and
 - **Scaffolding playbook.** Mapping from "Gemini said this band is
   too hard" to specific transformations (define vocabulary inline,
   shorten sentences, add picture support). Currently the evaluator
-  returns free-form `scaffolding_needed`; converting it into a small
-  enum of supported transformations lets the generator apply them
-  more reliably on retry.
+  returns free-form `revision_guidance` (for the Claude feedback loop)
+  and a separate free-form `scaffolding_needed` (teacher-facing
+  supports, parsed but not yet surfaced anywhere in v1). Converting
+  either into a small enum of supported transformations lets the
+  generator apply them more reliably on retry, and lets the UI render
+  scaffolds as actionable teacher chips instead of prose.
 - **Read-aloud-vs-independent thresholds.** Each grade has a different
   word-count range that's appropriate for read-aloud time vs.
   independent reading. A teacher could flag intent and the WPP table
