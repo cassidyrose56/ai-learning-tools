@@ -35,8 +35,8 @@ def parse_sse(body: str) -> list[tuple[str, dict]]:
         if not chunk.strip():
             continue
         lines = chunk.splitlines()
-        ev = next((l[7:] for l in lines if l.startswith("event: ")), None)
-        data = next((l[6:] for l in lines if l.startswith("data: ")), "{}")
+        ev = next((line[7:] for line in lines if line.startswith("event: ")), None)
+        data = next((line[6:] for line in lines if line.startswith("data: ")), "{}")
         if ev:
             events.append((ev, json.loads(data)))
     return events
