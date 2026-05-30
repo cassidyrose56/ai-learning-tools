@@ -67,6 +67,11 @@ No persistence, no accounts. Each generation is ephemeral.
   above or below their grade.
 - **Genre** — radio, `fiction | non-fiction`.
 - **Pages** — number, required, ≥ 1.
+- **Words per page** — number, optional. Defaults to a leveled-reader value
+  based on the chosen reading level (see table below) and auto-updates when
+  the reading level changes, unless the teacher has manually edited it.
+  Helper text under the field: *"Defaults to leveled-reader values for the
+  selected reading level. Adjust for longer or shorter pages."*
 - **Topics** — preset categories that expand to ~6 subtopic chips each, plus
   an "Add custom" input per category. The flat list of selected subtopics
   (preset + custom) is what's sent to the backend. One story per subtopic.
@@ -92,15 +97,22 @@ PRESETS = {
   `GET /api/presets`, `POST /api/export`, `POST /api/export/bundle`.
 - **`schemas.py`** — Pydantic models for request/response/events.
 - **`config.py`** — Reads `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, retry caps,
-  Claude model ID (default `claude-sonnet-4-6`), and the words-per-grade table:
+  Claude model ID (default `claude-sonnet-4-6`), and the words-per-grade
+  defaults (leveled-reader values; used when the UI doesn't override):
 
   ```python
-  WORDS_PER_PAGE_BY_GRADE = {
-      "K": 50, "1": 80, "2": 120, "3": 160, "4": 200, "5": 240
+  DEFAULT_WORDS_PER_PAGE_BY_GRADE = {
+      "K": 20, "1": 40, "2": 70, "3": 100, "4": 150, "5": 200
   }
   MAX_RETRIES = 3
   EVALUATOR_TRANSPORT_RETRIES = 3
   ```
+
+  These are deliberately conservative leveled-reader ballparks (e.g., a K
+  page in classroom early readers is typically ~10–25 words; a grade 5
+  leveled-reader page is ~150–225). The teacher can override per request
+  via the UI's "Words per page" field. Backend treats the value as the
+  source of truth; the table is only used when the field is omitted.
 
 - **`generator.py`** — `generate_story(topic, reading_level, target_words,
   genre, child_name, feedback=None) -> str`. Wraps the Anthropic SDK. Prompt
@@ -121,7 +133,8 @@ PRESETS = {
 
   ```
   emit "started"
-  target_words = pages * WORDS_PER_PAGE_BY_GRADE[reading_level]
+  wpp = request.words_per_page or DEFAULT_WORDS_PER_PAGE_BY_GRADE[reading_level]
+  target_words = pages * wpp
   feedback = None
   for attempt in 1..MAX_RETRIES:
       emit "attempt"
@@ -181,9 +194,13 @@ call.
   "reading_level": "3",
   "genre": "fiction",
   "pages": 2,
+  "words_per_page": 100,
   "topics": ["Soccer", "Dinosaurs", "The Moon"]
 }
 ```
+
+`words_per_page` is optional. When omitted, the backend uses
+`DEFAULT_WORDS_PER_PAGE_BY_GRADE[reading_level]`.
 
 Response: `text/event-stream`. Each event is `event: <type>\ndata: <json>\n\n`.
 
@@ -280,7 +297,8 @@ TDD: write tests first for each module.
 - **`test_generator.py`** — Mock Anthropic client. Verifies: fiction prompt
   includes `child_name`; non-fiction prompt does *not*; prior evaluator
   `feedback` appears in the next-attempt prompt; word-count target derived
-  from `pages × WORDS_PER_PAGE_BY_GRADE[reading_level]`.
+  from `pages × words_per_page`; when `words_per_page` is omitted, the
+  default from `DEFAULT_WORDS_PER_PAGE_BY_GRADE[reading_level]` is used.
 - **`test_pipeline.py`** — Inject fake generator/evaluator. Four key paths:
   matched on attempt 1; matched on attempt 3 after two mismatches; capped at
   3 with `matched=False`; evaluator-unavailable short-circuits the outer
@@ -295,7 +313,9 @@ TDD: write tests first for each module.
   names.
 - **Frontend `RequestForm.test.tsx`** — RTL: form validates (name + ≥1
   topic + pages ≥ 1); category expansion reveals subtopic chips; custom
-  topic input appends to the flat `topics` list.
+  topic input appends to the flat `topics` list; the "Words per page"
+  field defaults from the reading level and auto-updates when the
+  teacher changes reading level *unless* it has been manually edited.
 - **Frontend `StoryList.test.tsx`** — Feed a scripted SSE event sequence;
   verify a card appears on `started`, updates on `attempt`, finalizes on
   `done`, shows the warning badge when `matched: false`, and that the
