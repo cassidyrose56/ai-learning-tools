@@ -67,32 +67,10 @@ No persistence, no accounts. Each generation is ephemeral.
   above or below their grade.
 - **Genre** — radio, `fiction | non-fiction`.
 - **Pages** — number, required, ≥ 1.
-- **Words per page** — number, optional. The number on screen *is* the
-  number of words that will land on each printed page; the drawing-box
-  toggle affects only the default.
-
-  Default lookup (frontend), keyed on reading level **and** drawing-box
-  state. The "box on" column matches conventional leveled-reader page
-  counts (which already assume an illustration); the "box off" column is
-  ~2× larger because the full page is available for text:
-
-  | Reading level | Box on | Box off |
-  |---------------|--------|---------|
-  | K             | 20     | 40      |
-  | 1             | 40     | 80      |
-  | 2             | 70     | 140     |
-  | 3             | 100    | 200     |
-  | 4             | 150    | 300     |
-  | 5             | 200    | 400     |
-
-  The default auto-updates whenever reading level or the drawing-box
-  toggle changes, *unless* the teacher has manually edited the field
-  (sticky override). Manual values are taken at face value.
-
-  Helper text under the field: *"Defaults to a typical leveled-reader
-  page. Adjust for longer or shorter pages."*
 - **Drawing box** — checkbox, *"Add a blank box for the student to draw a
-  picture"*. Applies to PDF output only.
+  picture"*. Applies to PDF output only. The toggle also affects the
+  per-page word count the backend targets (see Words-per-page table
+  below).
 - **Topics** — preset categories that expand to ~6 subtopic chips each, plus
   an "Add custom" input per category. The flat list of selected subtopics
   (preset + custom) is what's sent to the backend. One story per subtopic.
@@ -119,14 +97,14 @@ PRESETS = {
 - **`schemas.py`** — Pydantic models for request/response/events.
 - **`config.py`** — Reads `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, retry caps,
   Claude model ID (default `claude-sonnet-4-6`), and the
-  default-words-per-page lookup. The defaults are split by drawing-box
-  state because the "box on" numbers match conventional leveled-reader
-  page counts (which already include illustration space) and the "box
-  off" numbers are ~2× larger to fill the freed-up page area:
+  words-per-page lookup. The values are split by drawing-box state
+  because the "box on" numbers match conventional leveled-reader page
+  counts (which already include illustration space) and the "box off"
+  numbers are ~2× larger to fill the freed-up page area:
 
   ```python
-  DEFAULT_WORDS_PER_PAGE = {
-      # (reading_level, include_drawing_box): default words per page
+  WORDS_PER_PAGE = {
+      # (reading_level, include_drawing_box): words per page
       ("K", True):  20,  ("K", False):  40,
       ("1", True):  40,  ("1", False):  80,
       ("2", True):  70,  ("2", False): 140,
@@ -138,11 +116,10 @@ PRESETS = {
   EVALUATOR_TRANSPORT_RETRIES = 3
   ```
 
-  The frontend uses this table to populate the "Words per page" default
-  whenever reading level or the drawing-box toggle changes (unless the
-  field has been manually edited). The backend itself stays simple:
-  `target_words = pages × words_per_page`. The drawing-box flag is
-  passed only to the PDF renderer.
+  This is the single source of truth — no UI override in v1. The
+  backend computes
+  `target_words = pages × WORDS_PER_PAGE[(reading_level, include_drawing_box)]`.
+  The drawing-box flag also flows to the PDF renderer to draw the box.
 
 - **`generator.py`** — `generate_story(topic, reading_level, target_words,
   genre, child_name, feedback=None) -> str`. Wraps the Anthropic SDK. Prompt
@@ -163,7 +140,7 @@ PRESETS = {
 
   ```
   emit "started"
-  wpp = request.words_per_page or DEFAULT_WORDS_PER_PAGE[(reading_level, include_drawing_box)]
+  wpp = WORDS_PER_PAGE[(reading_level, include_drawing_box)]
   target_words = pages * wpp
   feedback = None
   for attempt in 1..MAX_RETRIES:
@@ -247,15 +224,14 @@ call.
   "reading_level": "3",
   "genre": "fiction",
   "pages": 2,
-  "words_per_page": 100,
   "include_drawing_box": true,
   "topics": ["Soccer", "Dinosaurs", "The Moon"]
 }
 ```
 
-`words_per_page` is optional. When omitted, the backend uses
-`DEFAULT_WORDS_PER_PAGE_BY_GRADE[reading_level]`. `include_drawing_box`
-defaults to `false` and is passed through to PDF export only.
+`include_drawing_box` defaults to `false`. The per-page word count is
+not part of the request in v1 — it's looked up from `WORDS_PER_PAGE`
+using `(reading_level, include_drawing_box)`.
 
 Response: `text/event-stream`. Each event is `event: <type>\ndata: <json>\n\n`.
 
@@ -366,9 +342,8 @@ TDD: write tests first for each module.
 - **`test_generator.py`** — Mock Anthropic client. Verifies: fiction prompt
   includes `child_name`; non-fiction prompt does *not*; prior evaluator
   `feedback` appears in the next-attempt prompt; word-count target derived
-  from `pages × words_per_page`; when `words_per_page` is omitted, the
-  default from `DEFAULT_WORDS_PER_PAGE[(reading_level, include_drawing_box)]`
-  is used (covering both box-on and box-off rows).
+  from `pages × WORDS_PER_PAGE[(reading_level, include_drawing_box)]`
+  (test both box-on and box-off rows to confirm the doubling).
 - **`test_pipeline.py`** — Inject fake generator/evaluator. Four key paths:
   matched on attempt 1; matched on attempt 3 after two mismatches; capped at
   3 with `matched=False`; evaluator-unavailable short-circuits the outer
@@ -393,11 +368,9 @@ TDD: write tests first for each module.
   - Bundle zip contains the expected N files with the expected names.
 - **Frontend `RequestForm.test.tsx`** — RTL: form validates (name + ≥1
   topic + pages ≥ 1); category expansion reveals subtopic chips; custom
-  topic input appends to the flat `topics` list; the "Words per page"
-  field defaults from the reading level, auto-updates when the teacher
-  changes reading level *or* toggles the drawing box *unless* it has
-  been manually edited; the drawing-box toggle reduces the default by
-  ~45%.
+  topic input appends to the flat `topics` list; the drawing-box
+  checkbox toggles the `include_drawing_box` flag in the submitted
+  payload.
 - **Frontend `StoryList.test.tsx`** — Feed a scripted SSE event sequence;
   verify a card appears on `started`, updates on `attempt`, finalizes on
   `done`, shows the warning badge when `matched: false`, and that the
