@@ -181,7 +181,6 @@ PRESETS = {
     - If `include_drawing_box` is true, each page renders a bordered
       rectangle in the top ~45% of the page; text fills the bottom ~55%.
       Otherwise text uses the full page area.
-    - Title block (`"For <child_name>"` plus the topic) on page 1 only.
 
 ### Frontend (`frontend/src/`)
 
@@ -192,15 +191,17 @@ PRESETS = {
   `/api/generate` and opens the SSE stream.
 - **`components/StoryList.tsx`** — Scrolling list, keyed by `story_id`. One
   `StoryCard` per topic, appearing as `started` events arrive. Header
-  contains "Download all as Word" and "Download all as PDF" buttons (each
-  hits `/api/export/bundle`).
+  contains **Download all as Word** and **Download all as PDF** buttons
+  (each calls `/api/export/bundle` and downloads a `.zip` of the
+  individual files).
 - **`components/StoryCard.tsx`** — Skeleton on `started`, final text on
-  `done`, small warning badge if `matched: false`. Three actions:
-  **Download Word** (direct download, plain text), **Preview PDF**
-  (fetches once, opens inline preview), and inside the preview a
-  **Download** button that reuses the same blob. Small explanatory
-  line below the buttons: *"PDFs are pre-formatted for printing. Word
-  docs are plain text — apply your own formatting after download."*
+  `done`, small warning badge if `matched: false`. Two buttons:
+  **Download as Word** (direct download, plain text) and **Download as
+  PDF** (fetches the bytes once, opens an inline preview, and the
+  preview's own "Download" button reuses the same blob — no second
+  request). Small explanatory line below the buttons: *"PDFs are
+  pre-formatted for printing. Word docs are plain text — apply your
+  own formatting after download."*
 - **`lib/sse.ts`** — `fetch`-plus-`ReadableStream` helper, because native
   `EventSource` doesn't support POST bodies.
 - **`types.ts`** — Shared types mirroring `schemas.py`.
@@ -269,7 +270,7 @@ update them as events arrive.
 - `POST /api/export` — body:
   `{ format: "docx" | "pdf", child_name, topic, genre, text,
      reading_level, pages, include_drawing_box }`.
-  Returns the file with filename `<child_name> - <topic>.<ext>`.
+  Returns the file with filename `<student_name>_<topic>.<ext>`.
   - For `format: "docx"`: a plain Word file. Layout fields
     (`reading_level`, `pages`, `include_drawing_box`) are ignored.
   - For `format: "pdf"`: pre-formatted per `render_pdf`. Same endpoint
@@ -280,9 +281,10 @@ update them as events arrive.
 - `POST /api/export/bundle` — body:
   `{ format: "docx" | "pdf", stories: [{ child_name, topic, genre, text,
      reading_level, pages, include_drawing_box }, ...] }`.
-  Returns a `.zip` containing one file per story in the chosen format.
-  No preview for bundles — the per-story preview is the place to verify
-  layout before fanning out.
+  Returns a `.zip` containing one file per story in the chosen format,
+  each named `<student_name>_<topic>.<ext>`. No preview for bundles —
+  the per-story preview is the place to verify layout before fanning
+  out.
 
 **UI note on formats:** below the download buttons on each card, a small
 explanatory line: *"PDFs are pre-formatted for printing. Word docs are
@@ -365,7 +367,9 @@ TDD: write tests first for each module.
     group of consecutive whole sentences (never a single sentence per
     chunk, never a mid-sentence break); chunk word counts are roughly
     balanced toward `total_words / n`.
-  - Bundle zip contains the expected N files with the expected names.
+  - Bundle zip contains exactly N files in the chosen format, named
+    `<student_name>_<topic>.<ext>`. Filename helper sanitizes whitespace
+    to underscores and strips characters unsafe for filesystems.
 - **Frontend `RequestForm.test.tsx`** — RTL: form validates (name + ≥1
   topic + pages ≥ 1); category expansion reveals subtopic chips; custom
   topic input appends to the flat `topics` list; the drawing-box
