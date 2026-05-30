@@ -67,16 +67,30 @@ No persistence, no accounts. Each generation is ephemeral.
   above or below their grade.
 - **Genre** — radio, `fiction | non-fiction`.
 - **Pages** — number, required, ≥ 1.
-- **Words per page** — number, optional. Defaults to a leveled-reader value
-  based on the chosen reading level, *reduced by 45% when the drawing box
-  is on* (the box takes up roughly the top 45% of each page, so less text
-  fits). The default auto-updates when either the reading level or the
-  drawing-box toggle changes, unless the teacher has manually edited the
-  field. Manual values are taken at face value — a teacher who types `100`
-  gets a 100-word page regardless of the drawing-box setting.
-  Helper text under the field: *"Defaults to leveled-reader values for the
-  selected reading level (lower when a drawing box is added). Adjust for
-  longer or shorter pages."*
+- **Words per page** — number, optional. The number on screen *is* the
+  number of words that will land on each printed page; the drawing-box
+  toggle affects only the default.
+
+  Default lookup (frontend), keyed on reading level **and** drawing-box
+  state. The "box on" column matches conventional leveled-reader page
+  counts (which already assume an illustration); the "box off" column is
+  ~2× larger because the full page is available for text:
+
+  | Reading level | Box on | Box off |
+  |---------------|--------|---------|
+  | K             | 20     | 40      |
+  | 1             | 40     | 80      |
+  | 2             | 70     | 140     |
+  | 3             | 100    | 200     |
+  | 4             | 150    | 300     |
+  | 5             | 200    | 400     |
+
+  The default auto-updates whenever reading level or the drawing-box
+  toggle changes, *unless* the teacher has manually edited the field
+  (sticky override). Manual values are taken at face value.
+
+  Helper text under the field: *"Defaults to a typical leveled-reader
+  page. Adjust for longer or shorter pages."*
 - **Drawing box** — checkbox, *"Add a blank box for the student to draw a
   picture"*. Applies to PDF output only.
 - **Topics** — preset categories that expand to ~6 subtopic chips each, plus
@@ -104,28 +118,31 @@ PRESETS = {
   `GET /api/presets`, `POST /api/export`, `POST /api/export/bundle`.
 - **`schemas.py`** — Pydantic models for request/response/events.
 - **`config.py`** — Reads `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, retry caps,
-  Claude model ID (default `claude-sonnet-4-6`), and the words-per-grade
-  defaults (leveled-reader values; used when the UI doesn't override):
+  Claude model ID (default `claude-sonnet-4-6`), and the
+  default-words-per-page lookup. The defaults are split by drawing-box
+  state because the "box on" numbers match conventional leveled-reader
+  page counts (which already include illustration space) and the "box
+  off" numbers are ~2× larger to fill the freed-up page area:
 
   ```python
-  DEFAULT_WORDS_PER_PAGE_BY_GRADE = {
-      "K": 20, "1": 40, "2": 70, "3": 100, "4": 150, "5": 200
+  DEFAULT_WORDS_PER_PAGE = {
+      # (reading_level, include_drawing_box): default words per page
+      ("K", True):  20,  ("K", False):  40,
+      ("1", True):  40,  ("1", False):  80,
+      ("2", True):  70,  ("2", False): 140,
+      ("3", True): 100,  ("3", False): 200,
+      ("4", True): 150,  ("4", False): 300,
+      ("5", True): 200,  ("5", False): 400,
   }
   MAX_RETRIES = 3
   EVALUATOR_TRANSPORT_RETRIES = 3
   ```
 
-  These are deliberately conservative leveled-reader ballparks (e.g., a K
-  page in classroom early readers is typically ~10–25 words; a grade 5
-  leveled-reader page is ~150–225). The teacher can override per request
-  via the UI's "Words per page" field. Backend treats the value as the
-  source of truth; the table is only used when the field is omitted.
-
-  The frontend applies a `× 0.55` multiplier to the default when
-  `include_drawing_box` is true (the drawing box occupies ~45% of the
-  page). The backend itself does not re-multiply: `target_words = pages ×
-  words_per_page` regardless of the drawing-box setting, so manual
-  overrides stay predictable.
+  The frontend uses this table to populate the "Words per page" default
+  whenever reading level or the drawing-box toggle changes (unless the
+  field has been manually edited). The backend itself stays simple:
+  `target_words = pages × words_per_page`. The drawing-box flag is
+  passed only to the PDF renderer.
 
 - **`generator.py`** — `generate_story(topic, reading_level, target_words,
   genre, child_name, feedback=None) -> str`. Wraps the Anthropic SDK. Prompt
@@ -146,7 +163,7 @@ PRESETS = {
 
   ```
   emit "started"
-  wpp = request.words_per_page or DEFAULT_WORDS_PER_PAGE_BY_GRADE[reading_level]
+  wpp = request.words_per_page or DEFAULT_WORDS_PER_PAGE[(reading_level, include_drawing_box)]
   target_words = pages * wpp
   feedback = None
   for attempt in 1..MAX_RETRIES:
@@ -350,7 +367,8 @@ TDD: write tests first for each module.
   includes `child_name`; non-fiction prompt does *not*; prior evaluator
   `feedback` appears in the next-attempt prompt; word-count target derived
   from `pages × words_per_page`; when `words_per_page` is omitted, the
-  default from `DEFAULT_WORDS_PER_PAGE_BY_GRADE[reading_level]` is used.
+  default from `DEFAULT_WORDS_PER_PAGE[(reading_level, include_drawing_box)]`
+  is used (covering both box-on and box-off rows).
 - **`test_pipeline.py`** — Inject fake generator/evaluator. Four key paths:
   matched on attempt 1; matched on attempt 3 after two mismatches; capped at
   3 with `matched=False`; evaluator-unavailable short-circuits the outer
