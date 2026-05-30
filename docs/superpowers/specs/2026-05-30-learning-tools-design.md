@@ -197,11 +197,62 @@ PRESETS = {
 - **`components/StoryCard.tsx`** — Skeleton on `started`, final text on
   `done`, small warning badge if `matched: false`. Two buttons:
   **Download as Word** (direct download, plain text) and **Download as
-  PDF** (fetches the bytes once, opens an inline preview, and the
-  preview's own "Download" button reuses the same blob — no second
-  request). Small explanatory line below the buttons: *"PDFs are
-  pre-formatted for printing. Word docs are plain text — apply your
-  own formatting after download."*
+  PDF** (opens the PDF preview modal — see below). Small explanatory
+  line below the buttons: *"PDFs are pre-formatted for printing. Word
+  docs are plain text — apply your own formatting after download."*
+
+- **`components/PdfPreviewModal.tsx`** — Centered modal that lets the
+  teacher review a story's pre-formatted PDF before downloading it.
+
+  **Flow**
+  1. Click **Download as PDF** on a card.
+  2. Button enters a loading state (spinner + "Loading preview…"), disabled.
+  3. `POST /api/export` returns the PDF bytes; the modal opens.
+
+  **Layout** (~85vw × 90vh, centered over a dark backdrop, body scroll locked):
+
+  ```
+  ┌──────────────────────────────────────────────────────────┐
+  │  For Maya · "Soccer"                                   ×  │  header
+  ├──────────────────────────────────────────────────────────┤
+  │                                                          │
+  │   ┌────────────────────────────────────────────┐         │
+  │   │ native browser PDF viewer                  │         │
+  │   │ (scroll, zoom, page nav, print, keyboard   │         │  body
+  │   │  shortcuts come for free via <embed>)      │         │
+  │   └────────────────────────────────────────────┘         │
+  │                                                          │
+  ├──────────────────────────────────────────────────────────┤
+  │                            [ Cancel ]   [ Download ]      │  footer
+  └──────────────────────────────────────────────────────────┘
+  ```
+
+  - **Header**: title (`"For <child_name> · <topic>"`) + close (×) button.
+  - **Body**: `<embed type="application/pdf" src=blob:…>` over the
+    fetched blob URL. We rely on the browser's native PDF viewer
+    rather than building our own.
+  - **Footer**:
+    - **Cancel** → closes the modal, revokes the blob URL.
+    - **Download** → saves the same blob as
+      `<student_name>_<topic>.pdf` (no second backend request).
+  - **Dismiss** via ×, Cancel, Esc, or backdrop click.
+  - **Focus**: first focus = Download (primary action); focus is
+    trapped inside the modal; closing restores focus to the
+    originating button.
+
+  **Edge cases**
+  - **Browser can't render PDFs inline** (common on mobile): after the
+    `<embed>` mounts, if its rendered height is zero, replace the body
+    with *"Your browser can't preview PDFs inline. Download to view."*
+    and leave the Download button active.
+  - **Fetch error**: button returns to idle, inline error on the card
+    (*"Couldn't generate PDF. Try again."*).
+  - **Reopen**: no caching across opens — closing revokes the blob,
+    reopening triggers a fresh `POST /api/export`. Simpler state.
+
+  **A11y**: `role="dialog"`, `aria-modal="true"`,
+  `aria-labelledby` pointing at the header title. Esc closes; Tab
+  cycles within the modal only.
 - **`lib/sse.ts`** — `fetch`-plus-`ReadableStream` helper, because native
   `EventSource` doesn't support POST bodies.
 - **`types.ts`** — Shared types mirroring `schemas.py`.
@@ -379,6 +430,14 @@ TDD: write tests first for each module.
   verify a card appears on `started`, updates on `attempt`, finalizes on
   `done`, shows the warning badge when `matched: false`, and that the
   download buttons call the right endpoints.
+- **Frontend `PdfPreviewModal.test.tsx`** — RTL: clicking "Download as
+  PDF" puts the button in a loading state and calls `POST /api/export`
+  once; the modal opens with the header title `"For <name> · <topic>"`;
+  the in-modal **Download** button saves the same blob without a
+  second backend request; Cancel, ×, Esc, and backdrop click all
+  close the modal; the inline-render fallback message appears when
+  the embed reports zero height; focus returns to the originating
+  card button on close.
 
 ## Open dependencies
 
