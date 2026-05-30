@@ -1,4 +1,5 @@
 import asyncio
+import contextlib
 from typing import AsyncIterator
 
 from app.pipeline import EvaluateFn, GenerateFn, TopicParams, run_topic
@@ -34,6 +35,10 @@ async def run_batch(
             yield get_task.result()
         elif gathered in done and queue.empty():
             get_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await get_task
             break
+
+    await gathered
 
     yield ("complete", {})
