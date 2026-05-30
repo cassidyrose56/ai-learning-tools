@@ -167,9 +167,12 @@ PRESETS = {
     - Body font size derived from reading level:
       `K:24pt, 1:20pt, 2:18pt, 3:16pt, 4:14pt, 5:14pt`.
     - Page margins ~0.75".
-    - Story split into `pages` chunks on sentence boundaries
-      (`split_into_pages(text, n)` helper), one chunk per page with a
-      page break between.
+    - Story split into `pages` chunks by `split_into_pages(text, n)`,
+      one chunk per page with a page break between. Each chunk packs
+      as many whole sentences as possible toward an even
+      `total_words / pages` target; cuts are only allowed at sentence
+      boundaries, so a chunk is **a group of consecutive sentences**,
+      never a single sentence and never a mid-sentence break.
     - If `include_drawing_box` is true, each page renders a bordered
       rectangle in the top ~45% of the page; text fills the bottom ~55%.
       Otherwise text uses the full page area.
@@ -354,8 +357,10 @@ TDD: write tests first for each module.
     a drawing rectangle on each page (verified by inspecting the PDF
     content stream for the rect operator); body font size matches the
     reading-level table.
-  - `split_into_pages(text, n)` splits at sentence boundaries, returns
-    exactly `n` chunks, and never starts a chunk mid-sentence.
+  - `split_into_pages(text, n)` returns exactly `n` chunks, each a
+    group of consecutive whole sentences (never a single sentence per
+    chunk, never a mid-sentence break); chunk word counts are roughly
+    balanced toward `total_words / n`.
   - Bundle zip contains the expected N files with the expected names.
 - **Frontend `RequestForm.test.tsx`** — RTL: form validates (name + ≥1
   topic + pages ≥ 1); category expansion reveals subtopic chips; custom
