@@ -3,6 +3,11 @@ import re
 from dataclasses import dataclass
 
 from docx import Document
+from reportlab.lib.pagesizes import LETTER
+from reportlab.lib.units import inch
+from reportlab.pdfgen import canvas as _canvas
+
+from app.pedagogy import FONT_SIZES
 
 
 @dataclass
@@ -80,3 +85,64 @@ def split_into_pages(text: str, n: int) -> list[str]:
     while len(chunks) < n:
         chunks.append("")
     return chunks[:n]
+
+
+_MARGIN = 0.75 * inch
+_BOX_FRACTION = 0.45  # drawing box occupies top 45% of page
+
+
+def render_pdf(story: StoryInput) -> bytes:
+    buf = io.BytesIO()
+    width, height = LETTER
+    c = _canvas.Canvas(buf, pagesize=LETTER)
+    font_size = FONT_SIZES[story.reading_level]
+    leading = font_size * 1.3
+
+    chunks = split_into_pages(story.text, story.pages)
+    title = f'For {story.child_name} — "{story.topic}"'
+
+    for idx, chunk in enumerate(chunks):
+        c.setFont("Helvetica-Bold", font_size)
+        c.drawString(_MARGIN, height - _MARGIN, title)
+        text_top = height - _MARGIN - (font_size * 2)
+
+        if story.include_drawing_box:
+            box_top = text_top
+            box_bottom = box_top - (height - 2 * _MARGIN) * _BOX_FRACTION
+            box_height = box_top - box_bottom
+            c.rect(_MARGIN, box_bottom, width - 2 * _MARGIN, box_height, stroke=1, fill=0)
+            text_top = box_bottom - font_size
+
+        c.setFont("Helvetica", font_size)
+        _draw_wrapped(c, chunk, _MARGIN, text_top, width - 2 * _MARGIN, leading)
+
+        if idx < len(chunks) - 1:
+            c.showPage()
+
+    c.showPage()  # close final page
+    c.save()
+    return buf.getvalue()
+
+
+def _draw_wrapped(c, text: str, x: float, y: float, max_width: float, leading: float) -> None:
+    from reportlab.pdfbase.pdfmetrics import stringWidth
+
+    font_name = "Helvetica"
+    font_size = c._fontsize  # current font size
+    words = text.split()
+    line: list[str] = []
+    cursor_y = y
+
+    def width_of(w: list[str]) -> float:
+        return stringWidth(" ".join(w), font_name, font_size)
+
+    for w in words:
+        line.append(w)
+        if width_of(line) > max_width:
+            line.pop()
+            if line:
+                c.drawString(x, cursor_y, " ".join(line))
+                cursor_y -= leading
+            line = [w]
+    if line:
+        c.drawString(x, cursor_y, " ".join(line))

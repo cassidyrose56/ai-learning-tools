@@ -28,6 +28,13 @@ WORDS_PER_PAGE: dict[tuple[str, bool], int] = {
     ("5", True): 200,  ("5", False): 400,
 }
 
+FONT_SIZES: dict[str, int] = {
+    # Per-grade PDF body font, in points. Larger for early readers;
+    # plateaus at grade 4 because 14pt is already comfortable for grade-5
+    # text on letter-size pages.
+    "K": 24, "1": 20, "2": 18, "3": 16, "4": 14, "5": 14,
+}
+
 # Single-grade -> Learning Commons grade band. The grade-level rubric
 # only emits bands (K-1, 2-3, 4-5, 6-8, 9-10, 11-CCR); our UI offers
 # single grades. evaluator.py expands the teacher's target grade

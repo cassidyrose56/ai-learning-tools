@@ -93,3 +93,50 @@ def test_split_into_pages_handles_fewer_sentences_than_pages():
     assert len(chunks) == 3
     # first chunk has the content; rest may be empty
     assert chunks[0].strip().endswith(".")
+
+
+from pypdf import PdfReader
+
+from app.export import render_pdf
+from app.pedagogy import FONT_SIZES
+
+
+def test_pdf_has_correct_page_count():
+    story = make_story(pages=3)
+    blob = render_pdf(story)
+    reader = PdfReader(io.BytesIO(blob))
+    assert len(reader.pages) == 3
+
+
+def test_pdf_begins_with_pdf_signature():
+    blob = render_pdf(make_story())
+    assert blob[:4] == b"%PDF"
+    assert len(blob) > 500
+
+
+def test_pdf_draws_box_when_enabled(monkeypatch):
+    # spy on canvas.rect calls
+    rect_calls: list[tuple] = []
+    from reportlab.pdfgen import canvas as canvas_mod
+
+    real_rect = canvas_mod.Canvas.rect
+
+    def spy_rect(self, *args, **kwargs):
+        rect_calls.append((args, kwargs))
+        return real_rect(self, *args, **kwargs)
+
+    monkeypatch.setattr(canvas_mod.Canvas, "rect", spy_rect)
+
+    render_pdf(make_story(pages=2, include_drawing_box=True))
+    box_with_box = len(rect_calls)
+    rect_calls.clear()
+
+    render_pdf(make_story(pages=2, include_drawing_box=False))
+    box_without_box = len(rect_calls)
+
+    assert box_with_box >= 2  # at least one rect per page
+    assert box_without_box == 0
+
+
+def test_pdf_font_size_per_reading_level():
+    assert FONT_SIZES == {"K": 24, "1": 20, "2": 18, "3": 16, "4": 14, "5": 14}
