@@ -96,11 +96,6 @@ instead of being scattered through `config.py`, `evaluator.py`, and
   The generator's Jinja template would inject the target, and we'd
   have a cheap structural post-check before paying for an LLM-as-judge
   retry.
-- **Vocabulary allow/avoid lists.** Per-grade word lists (e.g.,
-  Dolch sight words for K–3; common subject-academic words for grades
-  4–5). Used two ways: seed the generator prompt with "prefer these,
-  avoid those," and run a deterministic post-check that flags any
-  avoid-list word that slipped through.
 - **Scaffolding playbook.** Mapping from "Gemini said this band is
   too hard" to specific transformations (define vocabulary inline,
   shorten sentences, add picture support). Currently the evaluator
@@ -123,12 +118,6 @@ instead of being scattered through `config.py`, `evaluator.py`, and
   students, a higher word-count target for accelerated readers.
   Implementation: rename the file's top-level constants to attributes
   of a `Profile` and load the active profile by name.
-- **Admin UI over pedagogy values.** Once the table is structured,
-  an authenticated admin route could expose it as a form — change
-  the words-per-page for grade 3, see the next generation reflect
-  it, no code change. Risky because pedagogy decisions are
-  load-bearing for output quality; this would need versioning and
-  an "active profile" history.
 - **Cross-reference with `vendor/evaluators` thresholds.** The
   upstream sentence-structure rubric publishes numeric guidelines
   per grade (e.g., grade-3 avg sentence length < 12 words). When
@@ -191,3 +180,72 @@ Implementation tradeoffs:
 - Bumps prompt complexity for Claude (one more variable threaded
   through `fiction.j2` / `non_fiction.j2`).
 - Wire-format change is additive only — existing clients keep working.
+
+## Ground generation in ELA standards via Learning Commons KG MCP
+
+Today `generator.py` builds a prompt with `topic`, `reading_level`,
+`target_words`, and `child_name`, then asks Claude to write the story
+from its training. Claude does its best, but "grade 3 reading level"
+is a fuzzy aggregate. Common Core (and state-specific) ELA standards
+are concrete: grade 2 needs *"describe how words and phrases supply
+rhythm and meaning in a story, poem, or song"*; grade 3 needs
+*"determine the main idea of a text; recount key details and explain
+how they support the main idea"*; etc.
+
+The Learning Commons publishes a knowledge graph of ELA standards.
+If/when they expose it as an MCP server, we can attach it to our
+Anthropic Messages call so Claude can query the KG *during* drafting:
+
+```python
+# sketch — actual MCP API will be whatever the server publishes
+message = await client.messages.create(
+    model=settings.claude_model,
+    max_tokens=2048,
+    messages=[{"role": "user", "content": prompt}],
+    mcp_servers=[
+        {
+            "type": "url",
+            "url": "https://mcp.learningcommons.org/standards",
+            "name": "learning-commons-standards",
+        }
+    ],
+)
+```
+
+Why it matters:
+
+- **Stronger pedagogy guarantees.** A grade-3 story can be written
+  toward `CC.RL.3.1` (main-idea identification) explicitly, not just
+  "approximately grade-3 vocabulary." Teachers can cite the standard
+  the story practices.
+- **Fewer evaluator retries.** If Claude wrote toward the right
+  standards from the start, Gemini is more likely to return
+  `appropriate=True` on attempt 1. The 3-attempt retry budget exists
+  because the generator and judge can disagree; aligning the generator
+  to the same source the judge is implicitly checking against narrows
+  that gap.
+- **State-specific variants.** If the KG carries state-specific
+  variations (e.g., Texas TEKS instead of Common Core), we can
+  parameterize per-classroom.
+
+Implementation tradeoffs:
+
+- **MCP availability.** Depends on Learning Commons actually shipping
+  the KG behind an MCP endpoint. As of this writing the
+  `learning-commons-org/evaluators` repo is the public artifact; the
+  KG-via-MCP exposure is forward-looking. We'd want to confirm before
+  committing engineering time.
+- **Latency.** Each MCP tool call inside generation adds a round-trip.
+  A short K-1 story with one standard lookup is fine; a longer
+  passage that fetches multiple standards could noticeably slow per-
+  story generation.
+- **Caching.** Standards-per-grade are stable for the duration of a
+  school year. A lightweight per-grade cache in front of the MCP
+  client would let multiple stories in a batch share the lookup.
+- **Failure mode.** If the MCP server is unreachable, fall back to
+  the v1 behavior (prompt without standards context) rather than
+  failing the whole generation. The story still ships; the warning
+  badge already covers "couldn't perfectly validate."
+- **Prompt-template change.** The Jinja templates would gain an
+  optional `{{ standards }}` block. Empty when the MCP attachment
+  isn't in use; populated by Claude itself once the tool is wired.
