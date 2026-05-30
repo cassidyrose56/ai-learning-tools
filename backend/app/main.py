@@ -1,14 +1,15 @@
 import json
-from fastapi import FastAPI
+from fastapi import FastAPI, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 
 from app.evaluator import evaluate_grade_level
+from app.export import StoryInput, render_docx, render_pdf, safe_filename
 from app.generator import generate_story
 from app.orchestrator import run_batch
 from app.pipeline import TopicParams
 from app.presets import PRESETS
-from app.schemas import GenerateRequest
+from app.schemas import ExportRequest, GenerateRequest
 
 app = FastAPI(title="AI Learning Tools")
 
@@ -52,3 +53,33 @@ async def generate(request: GenerateRequest) -> StreamingResponse:
             )
 
     return StreamingResponse(event_source(), media_type="text/event-stream")
+
+
+@app.post("/api/export")
+async def export(request: ExportRequest) -> Response:
+    story = StoryInput(
+        child_name=request.child_name,
+        topic=request.topic,
+        genre=request.genre,
+        text=request.text,
+        reading_level=request.reading_level,
+        pages=request.pages,
+        include_drawing_box=request.include_drawing_box,
+    )
+    base = safe_filename(request.child_name, request.topic)
+    if request.format == "docx":
+        blob = render_docx(story)
+        media = (
+            "application/vnd.openxmlformats-officedocument."
+            "wordprocessingml.document"
+        )
+        filename = f"{base}.docx"
+    else:
+        blob = render_pdf(story)
+        media = "application/pdf"
+        filename = f"{base}.pdf"
+    return Response(
+        content=blob,
+        media_type=media,
+        headers={"content-disposition": f'attachment; filename="{filename}"'},
+    )
