@@ -61,16 +61,26 @@ No persistence, no accounts. Each generation is ephemeral.
 
 ## Inputs (UI form)
 
+> **Note — Drawing box is PDF-only.** The drawing-box layout is a
+> reportlab feature of the PDF renderer. Word downloads are plain text
+> by design (see the Export section) and do **not** include the
+> drawing box, even if the teacher has the box checkbox enabled. The
+> form's drawing-box checkbox should display this caveat as helper
+> text directly under the field so the teacher isn't surprised when
+> they open a Word file later.
+
+
 - **Student's name** — free text, required.
 - **Reading level** — dropdown, `K | 1 | 2 | 3 | 4 | 5`. Label framed as
   *reading level*, not enrolled grade, so it accommodates students reading
   above or below their grade.
 - **Genre** — radio, `fiction | non-fiction`.
 - **Pages** — number, required, ≥ 1.
-- **Drawing box** — checkbox, *"Add a blank box for the student to draw a
-  picture"*. Applies to PDF output only. The toggle also affects the
+- **Drawing box** — checkbox, *"Add a blank box for the student to draw
+  a picture"*. PDF-only (see note above). The toggle also affects the
   per-page word count the backend targets (see Words-per-page table
-  below).
+  below). Helper text under the checkbox: *"The drawing box appears
+  only in PDF downloads. Word downloads are plain text."*
 - **Topics** — preset categories that expand to ~6 subtopic chips each, plus
   an "Add custom" input per category. The flat list of selected subtopics
   (preset + custom) is what's sent to the backend. One story per subtopic.
