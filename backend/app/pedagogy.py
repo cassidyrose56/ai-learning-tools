@@ -10,8 +10,6 @@
 # v2 brainstorms (see docs/v2-ideas.md "Pedagogy table extensions"):
 #   - Scaffolding playbook    (when to add definitions, picture support,
 #                              sentence chunking, etc.)
-#   - Vocabulary allow/avoid  (per-grade word lists for prompt seeding
-#                              and post-hoc validation)
 #   - Sentence-length targets (per-grade max sentence length the generator
 #                              should aim for)
 
@@ -28,4 +26,14 @@ WORDS_PER_PAGE: dict[tuple[str, bool], int] = {
     ("3", True): 100,  ("3", False): 200,
     ("4", True): 150,  ("4", False): 300,
     ("5", True): 200,  ("5", False): 400,
+}
+
+# Single-grade -> Learning Commons grade band. The grade-level rubric
+# only emits bands (K-1, 2-3, 4-5, 6-8, 9-10, 11-CCR); our UI offers
+# single grades. evaluator.py expands the teacher's target grade
+# through this table before comparing against the judge's verdict.
+GRADE_TO_BAND: dict[str, str] = {
+    "K": "K-1", "1": "K-1",
+    "2": "2-3", "3": "2-3",
+    "4": "4-5", "5": "4-5",
 }
