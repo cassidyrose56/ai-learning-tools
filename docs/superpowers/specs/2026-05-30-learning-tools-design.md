@@ -68,10 +68,15 @@ No persistence, no accounts. Each generation is ephemeral.
 - **Genre** — radio, `fiction | non-fiction`.
 - **Pages** — number, required, ≥ 1.
 - **Words per page** — number, optional. Defaults to a leveled-reader value
-  based on the chosen reading level (see table below) and auto-updates when
-  the reading level changes, unless the teacher has manually edited it.
+  based on the chosen reading level, *reduced by 45% when the drawing box
+  is on* (the box takes up roughly the top 45% of each page, so less text
+  fits). The default auto-updates when either the reading level or the
+  drawing-box toggle changes, unless the teacher has manually edited the
+  field. Manual values are taken at face value — a teacher who types `100`
+  gets a 100-word page regardless of the drawing-box setting.
   Helper text under the field: *"Defaults to leveled-reader values for the
-  selected reading level. Adjust for longer or shorter pages."*
+  selected reading level (lower when a drawing box is added). Adjust for
+  longer or shorter pages."*
 - **Drawing box** — checkbox, *"Add a blank box for the student to draw a
   picture"*. Applies to PDF output only.
 - **Topics** — preset categories that expand to ~6 subtopic chips each, plus
@@ -115,6 +120,12 @@ PRESETS = {
   leveled-reader page is ~150–225). The teacher can override per request
   via the UI's "Words per page" field. Backend treats the value as the
   source of truth; the table is only used when the field is omitted.
+
+  The frontend applies a `× 0.55` multiplier to the default when
+  `include_drawing_box` is true (the drawing box occupies ~45% of the
+  page). The backend itself does not re-multiply: `target_words = pages ×
+  words_per_page` regardless of the drawing-box setting, so manual
+  overrides stay predictable.
 
 - **`generator.py`** — `generate_story(topic, reading_level, target_words,
   genre, child_name, feedback=None) -> str`. Wraps the Anthropic SDK. Prompt
@@ -365,8 +376,10 @@ TDD: write tests first for each module.
 - **Frontend `RequestForm.test.tsx`** — RTL: form validates (name + ≥1
   topic + pages ≥ 1); category expansion reveals subtopic chips; custom
   topic input appends to the flat `topics` list; the "Words per page"
-  field defaults from the reading level and auto-updates when the
-  teacher changes reading level *unless* it has been manually edited.
+  field defaults from the reading level, auto-updates when the teacher
+  changes reading level *or* toggles the drawing box *unless* it has
+  been manually edited; the drawing-box toggle reduces the default by
+  ~45%.
 - **Frontend `StoryList.test.tsx`** — Feed a scripted SSE event sequence;
   verify a card appears on `started`, updates on `attempt`, finalizes on
   `done`, shows the warning badge when `matched: false`, and that the
