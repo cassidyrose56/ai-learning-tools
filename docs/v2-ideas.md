@@ -135,3 +135,59 @@ instead of being scattered through `config.py`, `evaluator.py`, and
   we add more evaluators in v2, the pedagogy table should align
   with those thresholds so generation and evaluation aren't fighting
   each other.
+
+## Decouple reading level from student grade
+
+v1's `GenerateRequest` has one knob — `reading_level` (K–5) — and the
+form deliberately labels it "Reading level, not enrolled grade." That
+phrasing exists because the spec is explicit: a grade-4 student reading
+at grade-2 should get a grade-2 story, not a grade-4 story. But knowing
+*only* the reading level loses information that would make scaffolding
+sharper.
+
+Add a separate field for the student's actual grade (or age) so the
+generator and the v2 scaffolding playbook can see the gap:
+
+```ts
+interface GenerateRequest {
+  child_name: string;
+  reading_level: ReadingLevel;   // story target
+  child_grade?: ReadingLevel;    // student's actual enrolled grade (new)
+  // child_age?: number;         // optional alternative for non-K-12 contexts
+  ...
+}
+```
+
+Why it matters:
+
+- **Topic appropriateness.** A grade-4 student reading at grade-2 is a
+  9-year-old who would be bored by topics aimed at 6-year-olds (basic
+  colors, "the dog ran"). The generator can choose age-appropriate
+  subject matter while still using grade-2-appropriate vocabulary and
+  sentence structure.
+- **Sharper scaffolding.** A big gap between reading level and grade
+  signals "deliberately simplified for a struggling reader." The
+  generator could bias toward bridging vocabulary (introducing one or
+  two grade-4 academic words with definitions inline) instead of
+  writing entirely below the student's chronological level.
+- **More actionable evaluator failures.** When the evaluator returns
+  `appropriate=false`, the warning becomes diagnostic: "judged at K-1,
+  you targeted grade-2, student is in grade-4 — Claude may be
+  underestimating the student" tells the teacher *why* the retry
+  budget ran out and which lever to pull.
+
+Composes with:
+- the planned scaffolding playbook in `pedagogy.py` (gap-aware
+  transformations)
+- the v2 multi-evaluator setup (the vocabulary evaluator could rate
+  against both `reading_level` and `child_grade` simultaneously to
+  flag mismatch directions)
+
+Implementation tradeoffs:
+- `child_grade` should be **optional** — many teachers will just match
+  it to `reading_level` and ignore the extra field. Form should default
+  to "matches reading level," with an expand affordance for "student
+  reads above/below grade level."
+- Bumps prompt complexity for Claude (one more variable threaded
+  through `fiction.j2` / `non_fiction.j2`).
+- Wire-format change is additive only — existing clients keep working.
