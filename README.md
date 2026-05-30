@@ -7,7 +7,7 @@ spec.
 ## Setup
 
 1. `git submodule update --init --recursive`
-2. Copy `.env.example` → `.env` and fill in `ANTHROPIC_API_KEY` and `OPENAI_API_KEY`.
+2. Copy `.env.example` → `.env` and fill in `ANTHROPIC_API_KEY` and `GOOGLE_API_KEY`. (`OPENAI_API_KEY` is unused in v1 — leave the placeholder; it's reserved for v2 evaluators. See `docs/v2-ideas.md`.)
 3. Backend: `cd backend && uv sync`
 4. Frontend: `cd frontend && npm install`
 
@@ -22,8 +22,23 @@ spec.
 
 ## Updating the evaluator rubric
 
+The runtime grade-level prompts live at
+`backend/app/evaluator_prompts/grade-level/v1/{system,user}.txt`. They're a
+byte-for-byte snapshot of the upstream Learning Commons submodule, kept
+under our control so we can edit them (a future `v2/` sibling) without
+mutating the submodule's working tree.
+
+To pull an upstream prompt improvement:
+
 ```bash
 git submodule update --remote vendor/evaluators
-git add vendor/evaluators
-git commit -m "chore: bump evaluators submodule"
+cp vendor/evaluators/evals/prompts/grade-level-appropriateness/system.txt \
+   backend/app/evaluator_prompts/grade-level/v1/system.txt
+cp vendor/evaluators/evals/prompts/grade-level-appropriateness/user.txt \
+   backend/app/evaluator_prompts/grade-level/v1/user.txt
+git add vendor/evaluators backend/app/evaluator_prompts
+git commit -m "chore: bump evaluators submodule and refresh v1 snapshot"
 ```
+
+To run with a different prompt version, set
+`EVALUATOR_PROMPT_VERSION=v2` (or whatever) in your `.env`.

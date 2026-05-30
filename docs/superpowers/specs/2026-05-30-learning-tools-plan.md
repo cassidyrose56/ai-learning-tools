@@ -2,11 +2,11 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Ship a single-page web app that lets a K–5 teacher generate one Claude-written story per selected topic, grade-level-checked by an OpenAI evaluator, and exportable as Word or PDF (single file or zip bundle).
+**Goal:** Ship a single-page web app that lets a K–5 teacher generate one Claude-written story per selected topic, grade-level-checked by a Gemini-based evaluator (using the Learning Commons grade-level rubric), and exportable as Word or PDF (single file or zip bundle).
 
 **Architecture:** FastAPI backend with one SSE generation endpoint and three JSON/file endpoints (presets, export, bundle); Vite + React + TypeScript frontend that streams the SSE feed into per-topic story cards. The Learning Commons evaluator is consumed as a `vendor/evaluators` git submodule via a thin `evaluator.py` adapter. No persistence.
 
-**Tech Stack:** Python 3.12, FastAPI, Anthropic SDK (`claude-sonnet-4-6`), OpenAI SDK, Jinja2, python-docx, reportlab, pypdf (tests). Vite + React 18 + TypeScript, Vitest, @testing-library/react. uv for Python deps, npm for frontend deps.
+**Tech Stack:** Python 3.12, FastAPI, Anthropic SDK (`claude-sonnet-4-6`), `langchain-google-genai` (`gemini-2.5-pro` at temperature 0.25, mirroring the upstream notebook), Jinja2, python-docx, reportlab, pypdf (tests). Vite + React 18 + TypeScript, Vitest, @testing-library/react. uv for Python deps, npm for frontend deps. The grade-level rubric + procedure prompts are byte-identical snapshots of the upstream `learning-commons-org/evaluators` submodule, stored under `backend/app/evaluator_prompts/grade-level/v1/` so we can iterate on them (future `v2/`, etc.) without polluting the submodule.
 
 ---
 
@@ -15,7 +15,7 @@
 1. Repo scaffolding (submodule, `.env.example`, Makefile, README stub)
 2. Backend project + config + schemas
 3. Generator (Jinja2 prompts + Anthropic wrapper)
-4. Evaluator adapter (rubric load + OpenAI call + transport retries)
+4. Evaluator adapter (versioned rubric load + Gemini call + band-to-grade mapping + transport retries)
 5. Pipeline (per-topic generate+evaluate loop)
 6. Orchestrator + presets + SSE `/api/generate`
 7. DOCX export
@@ -75,7 +75,15 @@ git commit -m "chore: add learning-commons evaluators as submodule at vendor/eva
 - [ ] **Step 1: Create `.env.example`**
 
 ```bash
+# Used by the story generator (Claude)
 ANTHROPIC_API_KEY=sk-ant-...
+
+# Used by the grade-level evaluator (Gemini 2.5 Pro)
+GOOGLE_API_KEY=...
+
+# Not used in v1. Reserved for v2 — some additional Learning Commons
+# evaluators (vocabulary, sentence structure, etc.) are calibrated on
+# OpenAI models. See docs/v2-ideas.md.
 OPENAI_API_KEY=sk-...
 ```
 
@@ -129,7 +137,7 @@ spec.
 ## Setup
 
 1. `git submodule update --init --recursive`
-2. Copy `.env.example` → `.env` and fill in `ANTHROPIC_API_KEY` and `OPENAI_API_KEY`.
+2. Copy `.env.example` → `.env` and fill in `ANTHROPIC_API_KEY` and `GOOGLE_API_KEY`. (`OPENAI_API_KEY` is reserved for v2 — leave the placeholder.)
 3. Backend: `cd backend && uv sync`
 4. Frontend: `cd frontend && npm install`
 
@@ -175,7 +183,7 @@ git commit -m "docs: add README scaffolding"
 ```bash
 cd backend
 uv init --bare --python 3.12
-uv add fastapi 'uvicorn[standard]' anthropic openai jinja2 httpx pydantic 'pydantic-settings' python-docx reportlab
+uv add fastapi 'uvicorn[standard]' anthropic langchain-google-genai jinja2 httpx pydantic 'pydantic-settings' python-docx reportlab
 uv add --dev pytest pytest-asyncio pypdf ruff
 ```
 
@@ -249,12 +257,20 @@ def test_retry_caps():
 
 def test_settings_reads_env(monkeypatch):
     monkeypatch.setenv("ANTHROPIC_API_KEY", "anth-test")
-    monkeypatch.setenv("OPENAI_API_KEY", "oa-test")
+    monkeypatch.setenv("GOOGLE_API_KEY", "g-test")
     get_settings.cache_clear()
     s = get_settings()
     assert s.anthropic_api_key == "anth-test"
-    assert s.openai_api_key == "oa-test"
+    assert s.google_api_key == "g-test"
     assert s.claude_model == "claude-sonnet-4-6"
+    assert s.gemini_model == "gemini-2.5-pro"
+    assert s.evaluator_prompt_version == "v1"
+
+
+def test_settings_evaluator_prompt_version_overridable(monkeypatch):
+    monkeypatch.setenv("EVALUATOR_PROMPT_VERSION", "v2")
+    get_settings.cache_clear()
+    assert get_settings().evaluator_prompt_version == "v2"
 ```
 
 - [ ] **Step 2: Run, confirm failure**
@@ -288,8 +304,11 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file="../.env", extra="ignore")
 
     anthropic_api_key: str = ""
-    openai_api_key: str = ""
+    google_api_key: str = ""
+    openai_api_key: str = ""  # reserved for v2; not used in v1
     claude_model: str = "claude-sonnet-4-6"
+    gemini_model: str = "gemini-2.5-pro"
+    evaluator_prompt_version: str = "v1"
 
 
 @lru_cache
@@ -749,85 +768,103 @@ git commit -m "feat(backend): add generator with Jinja2 prompt and Anthropic cal
 
 ## Phase 4 — Evaluator adapter
 
-### Task 4.1: `evaluator.py` — rubric load + OpenAI call + transport retries
+### Task 4.1: `evaluator.py` — Gemini judge + band-to-grade mapping + transport retries
 
 **Files:**
 - Create: `backend/app/evaluator.py`
 - Create: `backend/tests/test_evaluator.py`
-- Create: `backend/tests/fixtures/fake_rubric.txt`
 
-- [ ] **Step 1: Drop in a fixture rubric for tests**
+The grade-level rubric prompts already live at
+`backend/app/evaluator_prompts/grade-level/v1/{system,user}.txt` — they were
+snapshotted from the submodule during repo setup. No fixture rubric is
+needed; tests read the real v1 snapshot.
 
-Create `backend/tests/fixtures/fake_rubric.txt`:
-
-```
-You are a grade-level evaluator. Given a passage, output JSON with keys
-`grade` (one of K,1,2,3,4,5) and `feedback` (short explanation).
-```
-
-- [ ] **Step 2: Write failing tests**
+- [ ] **Step 1: Write failing tests**
 
 `backend/tests/test_evaluator.py`:
 
 ```python
 import json
-from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from app import evaluator as eval_mod
-from app.evaluator import evaluate_grade_level, _load_rubric
-
-
-FIXTURE_RUBRIC = Path(__file__).parent / "fixtures" / "fake_rubric.txt"
+from app.evaluator import (
+    evaluate_grade_level,
+    _band_for_grade,
+    _load_prompts,
+)
 
 
 @pytest.fixture(autouse=True)
-def stub_rubric(monkeypatch):
-    monkeypatch.setattr(eval_mod, "_RUBRIC_PATH", FIXTURE_RUBRIC)
-    eval_mod._load_rubric.cache_clear()
+def reset_caches():
+    eval_mod._load_prompts.cache_clear()
+    yield
+    eval_mod._load_prompts.cache_clear()
 
 
-def _mock_completion(content: str):
+def _ai_message(payload: dict | str):
     msg = MagicMock()
-    msg.message.content = content
-    response = MagicMock()
-    response.choices = [msg]
-    return response
+    msg.content = json.dumps(payload) if isinstance(payload, dict) else payload
+    return msg
 
 
-def _mock_openai(responses):
-    client = MagicMock()
-    client.chat.completions.create = AsyncMock(side_effect=responses)
-    return client
+def _mock_llm(responses):
+    llm = MagicMock()
+    llm.ainvoke = AsyncMock(side_effect=responses)
+    return llm
 
 
-async def test_parses_matched_response(monkeypatch):
-    payload = json.dumps({"grade": "3", "feedback": "On level."})
-    client = _mock_openai([_mock_completion(payload)])
-    monkeypatch.setattr(eval_mod, "_client", lambda: client)
+@pytest.mark.parametrize(
+    "grade,band",
+    [("K", "K-1"), ("1", "K-1"), ("2", "2-3"), ("3", "2-3"), ("4", "4-5"), ("5", "4-5")],
+)
+def test_band_for_grade(grade, band):
+    assert _band_for_grade(grade) == band
+
+
+def test_load_prompts_reads_v1_snapshot():
+    system, user = _load_prompts("v1")
+    assert "grade level appropriateness" in system.lower()
+    assert user.strip()  # non-empty
+
+
+async def test_parses_matched_band_response(monkeypatch):
+    payload = {
+        "reasoning": "...",
+        "grade": "2-3",
+        "alternative_grade": "K-1",
+        "scaffolding_needed": "Pre-teach 'soccer'.",
+    }
+    monkeypatch.setattr(eval_mod, "_llm", lambda: _mock_llm([_ai_message(payload)]))
 
     result = await evaluate_grade_level("Some story.", "3")
     assert result.matched is True
-    assert result.predicted_grade == "3"
-    assert "On level" in result.feedback
+    assert result.predicted_grade == "2-3"
+    assert "K-1" in result.feedback
+    assert "Pre-teach" in result.feedback
 
 
 async def test_parses_mismatch_response(monkeypatch):
-    payload = json.dumps({"grade": "5", "feedback": "Too hard."})
-    client = _mock_openai([_mock_completion(payload)])
-    monkeypatch.setattr(eval_mod, "_client", lambda: client)
+    payload = {
+        "reasoning": "Sentences too long.",
+        "grade": "4-5",
+        "alternative_grade": "2-3",
+        "scaffolding_needed": "Chunk into shorter sentences.",
+    }
+    monkeypatch.setattr(eval_mod, "_llm", lambda: _mock_llm([_ai_message(payload)]))
 
     result = await evaluate_grade_level("Some story.", "3")
     assert result.matched is False
-    assert result.predicted_grade == "5"
-    assert "Too hard" in result.feedback
+    assert result.predicted_grade == "4-5"
+    assert "Chunk into shorter sentences" in result.feedback
+    assert "Sentences too long" in result.feedback
 
 
 async def test_retries_three_times_then_gives_up(monkeypatch):
-    client = MagicMock()
-    client.chat.completions.create = AsyncMock(side_effect=RuntimeError("boom"))
-    monkeypatch.setattr(eval_mod, "_client", lambda: client)
+    llm = MagicMock()
+    llm.ainvoke = AsyncMock(side_effect=RuntimeError("boom"))
+    monkeypatch.setattr(eval_mod, "_llm", lambda: llm)
     sleeps: list[float] = []
 
     async def fake_sleep(s):
@@ -839,34 +876,63 @@ async def test_retries_three_times_then_gives_up(monkeypatch):
     assert result.matched is False
     assert result.predicted_grade is None
     assert result.feedback == "evaluator unavailable"
-    assert client.chat.completions.create.await_count == 3
+    assert llm.ainvoke.await_count == 3
     assert sleeps == [0.5, 1.0]
 
 
 async def test_malformed_json_treated_as_transient(monkeypatch):
-    good = json.dumps({"grade": "3", "feedback": "ok"})
-    client = _mock_openai(
-        [_mock_completion("not json"), _mock_completion(good)]
+    good = {
+        "reasoning": "ok",
+        "grade": "2-3",
+        "alternative_grade": "K-1",
+        "scaffolding_needed": "",
+    }
+    monkeypatch.setattr(
+        eval_mod,
+        "_llm",
+        lambda: _mock_llm([_ai_message("not json"), _ai_message(good)]),
     )
-    monkeypatch.setattr(eval_mod, "_client", lambda: client)
     monkeypatch.setattr(eval_mod.asyncio, "sleep", AsyncMock())
 
     result = await evaluate_grade_level("Some story.", "3")
     assert result.matched is True
-    assert client.chat.completions.create.await_count == 2
 
 
-def test_load_rubric_reads_fixture():
-    text = _load_rubric()
-    assert "grade-level evaluator" in text
+async def test_prompt_version_selectable(monkeypatch, tmp_path):
+    # Drop a fake v2 snapshot under a temp prompt root and point the loader at it.
+    v2 = tmp_path / "grade-level" / "v2"
+    v2.mkdir(parents=True)
+    (v2 / "system.txt").write_text("fake v2 system")
+    (v2 / "user.txt").write_text("fake v2 user with {text}")
+    monkeypatch.setattr(eval_mod, "_PROMPT_ROOT", tmp_path)
+    eval_mod._load_prompts.cache_clear()
+
+    monkeypatch.setattr(eval_mod, "_active_version", lambda: "v2")
+    payload = {
+        "reasoning": "x", "grade": "2-3", "alternative_grade": "K-1", "scaffolding_needed": "",
+    }
+    captured: list = []
+
+    async def capture_invoke(messages):
+        captured.append(messages)
+        return _ai_message(payload)
+
+    llm = MagicMock()
+    llm.ainvoke = AsyncMock(side_effect=capture_invoke)
+    monkeypatch.setattr(eval_mod, "_llm", lambda: llm)
+
+    await evaluate_grade_level("hello", "3")
+    # The fake v2 system prompt should have been used
+    sent = "".join(getattr(m, "content", "") for m in captured[0])
+    assert "fake v2 system" in sent
 ```
 
-- [ ] **Step 3: Run, confirm failure**
+- [ ] **Step 2: Run, confirm failure**
 
 Run: `cd backend && uv run pytest tests/test_evaluator.py -v`
 Expected: ImportError on `app.evaluator`.
 
-- [ ] **Step 4: Implement evaluator**
+- [ ] **Step 3: Implement evaluator**
 
 `backend/app/evaluator.py`:
 
@@ -877,63 +943,95 @@ import logging
 from functools import lru_cache
 from pathlib import Path
 
-from openai import AsyncOpenAI
+from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_google_genai import ChatGoogleGenerativeAI
 
 from app.config import EVALUATOR_TRANSPORT_RETRIES, get_settings
 from app.schemas import EvalResult
 
 log = logging.getLogger(__name__)
 
-_RUBRIC_PATH = (
-    Path(__file__).resolve().parents[2]
-    / "vendor"
-    / "evaluators"
-    / "evals"
-    / "prompts"
-    / "grade-level-appropriateness"
-    / "system.txt"
-)
+_PROMPT_ROOT = Path(__file__).parent / "evaluator_prompts"
+
+# Single-grade -> Learning Commons band. The rubric only emits these bands.
+_GRADE_TO_BAND: dict[str, str] = {
+    "K": "K-1", "1": "K-1",
+    "2": "2-3", "3": "2-3",
+    "4": "4-5", "5": "4-5",
+}
+
+
+def _band_for_grade(grade: str) -> str:
+    return _GRADE_TO_BAND[grade]
+
+
+def _active_version() -> str:
+    return get_settings().evaluator_prompt_version
+
+
+@lru_cache(maxsize=8)
+def _load_prompts(version: str) -> tuple[str, str]:
+    base = _PROMPT_ROOT / "grade-level" / version
+    return (
+        (base / "system.txt").read_text(encoding="utf-8"),
+        (base / "user.txt").read_text(encoding="utf-8"),
+    )
 
 
 @lru_cache
-def _load_rubric() -> str:
-    return _RUBRIC_PATH.read_text(encoding="utf-8")
-
-
-@lru_cache
-def _client() -> AsyncOpenAI:
-    return AsyncOpenAI(api_key=get_settings().openai_api_key)
+def _llm() -> ChatGoogleGenerativeAI:
+    return ChatGoogleGenerativeAI(
+        model=get_settings().gemini_model,
+        temperature=0.25,
+        timeout=120,
+        google_api_key=get_settings().google_api_key,
+    )
 
 
 _BACKOFF = [0.5, 1.0, 2.0]
 
 
+def _build_feedback(payload: dict) -> str:
+    reasoning = str(payload.get("reasoning", "")).strip()
+    alt = str(payload.get("alternative_grade", "")).strip()
+    scaffolding = str(payload.get("scaffolding_needed", "")).strip()
+    parts: list[str] = []
+    if reasoning:
+        parts.append(f"Reasoning: {reasoning}")
+    if alt:
+        parts.append(f"Closer fit was band {alt}.")
+    if scaffolding:
+        parts.append(f"To make the text accessible: {scaffolding}")
+    return " ".join(parts)
+
+
 async def evaluate_grade_level(text: str, target_reading_level: str) -> EvalResult:
-    rubric = _load_rubric()
-    user_msg = (
-        f"Target reading level: {target_reading_level}\n\n"
-        f"Passage:\n{text}\n\n"
-        "Respond with JSON: {\"grade\": \"<K|1|2|3|4|5>\", \"feedback\": \"<short>\"}."
+    system_prompt, user_prompt = _load_prompts(_active_version())
+    # The upstream user prompt expects a {text} placeholder. We also pass
+    # the target grade as context for the judge to anchor on.
+    hydrated_user = (
+        f"Target student grade: {target_reading_level}\n\n"
+        f"Procedure:\n{user_prompt}\n\n"
+        f"Text to evaluate:\n{text}\n\n"
+        "Return JSON only, no prose: "
+        '{"reasoning": "...", "grade": "<band>", '
+        '"alternative_grade": "<band>", "scaffolding_needed": "..."}'
     )
+    expected_band = _band_for_grade(target_reading_level)
+
     last_err: Exception | None = None
     for attempt in range(EVALUATOR_TRANSPORT_RETRIES):
         try:
-            response = await _client().chat.completions.create(
-                model="gpt-4o-mini",
-                temperature=0,
-                messages=[
-                    {"role": "system", "content": rubric},
-                    {"role": "user", "content": user_msg},
-                ],
+            response = await _llm().ainvoke(
+                [SystemMessage(content=system_prompt), HumanMessage(content=hydrated_user)]
             )
-            raw = response.choices[0].message.content or ""
+            raw = response.content or ""
             data = json.loads(raw)
-            grade = str(data["grade"])
-            feedback = str(data.get("feedback", ""))
+            predicted_band = str(data["grade"])
             return EvalResult(
-                matched=(grade == target_reading_level),
-                predicted_grade=grade,
-                feedback=feedback,
+                matched=(predicted_band == expected_band),
+                predicted_grade=predicted_band,
+                feedback=_build_feedback(data),
             )
         except (json.JSONDecodeError, KeyError, Exception) as exc:  # noqa: BLE001
             last_err = exc
@@ -946,18 +1044,22 @@ async def evaluate_grade_level(text: str, target_reading_level: str) -> EvalResu
     )
 ```
 
-> **NOTE:** Phase 1 verified the rubric lives at `vendor/evaluators/evals/prompts/grade-level-appropriateness/system.txt`. There is also a `user.txt` in the same directory — keep `system.txt` as the rubric prompt (it contains the K–CCR grade-band evaluation criteria); the user-template lives in code in `evaluate_grade_level` itself.
+> **Why `predicted_grade` carries a band string:** The wire-level SSE
+> `done` event already calls this field `predicted_grade`. Rather than
+> introduce a parallel `predicted_band` field and update every consumer,
+> we keep the name and document that the value is the rubric band
+> (`"K-1"`, `"2-3"`, `"4-5"`, …). Frontend renders it as-is.
 
-- [ ] **Step 5: Run, confirm pass**
+- [ ] **Step 4: Run, confirm pass**
 
 Run: `cd backend && uv run pytest tests/test_evaluator.py -v`
-Expected: 5 passed.
+Expected: 8 passed.
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 5: Commit**
 
 ```bash
-git add backend/app/evaluator.py backend/tests/test_evaluator.py backend/tests/fixtures
-git commit -m "feat(backend): add evaluator adapter with OpenAI call and transport retries"
+git add backend/app/evaluator.py backend/tests/test_evaluator.py
+git commit -m "feat(backend): add Gemini evaluator with band-to-grade mapping"
 ```
 
 ---
