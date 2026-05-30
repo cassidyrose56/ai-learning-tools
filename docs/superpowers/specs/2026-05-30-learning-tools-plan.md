@@ -890,7 +890,8 @@ _RUBRIC_PATH = (
     / "evaluators"
     / "evals"
     / "prompts"
-    / "grade_level.md"
+    / "grade-level-appropriateness"
+    / "system.txt"
 )
 
 
@@ -945,7 +946,7 @@ async def evaluate_grade_level(text: str, target_reading_level: str) -> EvalResu
     )
 ```
 
-> **NOTE:** If Phase 1 Task 1.1 Step 2 discovered the rubric prompt lives at a different path within `vendor/evaluators/evals/prompts/`, update `_RUBRIC_PATH` here to the real filename. The path is a real filesystem read; if it does not exist at runtime the first generation request will fail loudly with `FileNotFoundError`, which is the desired signal.
+> **NOTE:** Phase 1 verified the rubric lives at `vendor/evaluators/evals/prompts/grade-level-appropriateness/system.txt`. There is also a `user.txt` in the same directory — keep `system.txt` as the rubric prompt (it contains the K–CCR grade-band evaluation criteria); the user-template lives in code in `evaluate_grade_level` itself.
 
 - [ ] **Step 5: Run, confirm pass**
 
