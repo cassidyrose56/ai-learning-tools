@@ -499,7 +499,7 @@ class BundleRequest(BaseModel):
 
 
 class EvalResult(BaseModel):
-    matched: bool
+    appropriate: bool
     predicted_grade: str | None
     feedback: str
 
@@ -518,7 +518,7 @@ class DoneEvent(BaseModel):
     story_id: str
     text: str
     predicted_grade: str | None
-    matched: bool
+    appropriate: bool
     attempts: int
 
 
@@ -885,7 +885,7 @@ def test_load_prompts_reads_v1_snapshot():
     assert user.strip()  # non-empty
 
 
-async def test_parses_matched_band_response(monkeypatch):
+async def test_parses_appropriate_band_response(monkeypatch):
     payload = {
         "reasoning": "...",
         "grade": "2-3",
@@ -895,7 +895,7 @@ async def test_parses_matched_band_response(monkeypatch):
     monkeypatch.setattr(eval_mod, "_llm", lambda: _mock_llm([_ai_message(payload)]))
 
     result = await evaluate_grade_level("Some story.", "3")
-    assert result.matched is True
+    assert result.appropriate is True
     assert result.predicted_grade == "2-3"
     assert "K-1" in result.feedback
     assert "Pre-teach" in result.feedback
@@ -911,7 +911,7 @@ async def test_parses_mismatch_response(monkeypatch):
     monkeypatch.setattr(eval_mod, "_llm", lambda: _mock_llm([_ai_message(payload)]))
 
     result = await evaluate_grade_level("Some story.", "3")
-    assert result.matched is False
+    assert result.appropriate is False
     assert result.predicted_grade == "4-5"
     assert "Chunk into shorter sentences" in result.feedback
     assert "Sentences too long" in result.feedback
@@ -929,7 +929,7 @@ async def test_retries_three_times_then_gives_up(monkeypatch):
     monkeypatch.setattr(eval_mod.asyncio, "sleep", fake_sleep)
 
     result = await evaluate_grade_level("Some story.", "3")
-    assert result.matched is False
+    assert result.appropriate is False
     assert result.predicted_grade is None
     assert result.feedback == "evaluator unavailable"
     assert llm.ainvoke.await_count == 3
@@ -951,7 +951,7 @@ async def test_malformed_json_treated_as_transient(monkeypatch):
     monkeypatch.setattr(eval_mod.asyncio, "sleep", AsyncMock())
 
     result = await evaluate_grade_level("Some story.", "3")
-    assert result.matched is True
+    assert result.appropriate is True
 
 
 async def test_prompt_version_selectable(monkeypatch, tmp_path):
@@ -1079,7 +1079,7 @@ async def evaluate_grade_level(text: str, target_reading_level: str) -> EvalResu
             data = json.loads(raw)
             predicted_band = str(data["grade"])
             return EvalResult(
-                matched=(predicted_band == expected_band),
+                appropriate=(predicted_band == expected_band),
                 predicted_grade=predicted_band,
                 feedback=_build_feedback(data),
             )
@@ -1090,7 +1090,7 @@ async def evaluate_grade_level(text: str, target_reading_level: str) -> EvalResu
                 await asyncio.sleep(_BACKOFF[attempt])
     log.error("evaluator unavailable after retries: %s", last_err)
     return EvalResult(
-        matched=False, predicted_grade=None, feedback="evaluator unavailable"
+        appropriate=False, predicted_grade=None, feedback="evaluator unavailable"
     )
 ```
 
@@ -1154,10 +1154,10 @@ async def _drain(queue: asyncio.Queue) -> list[tuple[str, dict]]:
     return events
 
 
-async def test_matched_on_first_attempt(monkeypatch):
+async def test_appropriate_on_first_attempt(monkeypatch):
     gen = AsyncMock(return_value="story1")
     eva = AsyncMock(
-        return_value=EvalResult(matched=True, predicted_grade="3", feedback="ok")
+        return_value=EvalResult(appropriate=True, predicted_grade="3", feedback="ok")
     )
     queue: asyncio.Queue = asyncio.Queue()
 
@@ -1172,18 +1172,18 @@ async def test_matched_on_first_attempt(monkeypatch):
     events = await _drain(queue)
     kinds = [k for k, _ in events]
     assert kinds == ["started", "attempt", "done"]
-    assert events[-1][1]["matched"] is True
+    assert events[-1][1]["appropriate"] is True
     assert events[-1][1]["attempts"] == 1
     assert gen.await_count == 1
 
 
-async def test_matched_after_two_mismatches(monkeypatch):
+async def test_appropriate_after_two_mismatches(monkeypatch):
     gen = AsyncMock(side_effect=["v1", "v2", "v3"])
     eva = AsyncMock(
         side_effect=[
-            EvalResult(matched=False, predicted_grade="5", feedback="too hard"),
-            EvalResult(matched=False, predicted_grade="4", feedback="still hard"),
-            EvalResult(matched=True, predicted_grade="3", feedback="ok"),
+            EvalResult(appropriate=False, predicted_grade="5", feedback="too hard"),
+            EvalResult(appropriate=False, predicted_grade="4", feedback="still hard"),
+            EvalResult(appropriate=True, predicted_grade="3", feedback="ok"),
         ]
     )
     queue: asyncio.Queue = asyncio.Queue()
@@ -1199,7 +1199,7 @@ async def test_matched_after_two_mismatches(monkeypatch):
     events = await _drain(queue)
     kinds = [k for k, _ in events]
     assert kinds == ["started", "attempt", "attempt", "attempt", "done"]
-    assert events[-1][1]["matched"] is True
+    assert events[-1][1]["appropriate"] is True
     assert events[-1][1]["attempts"] == 3
     # generator was called with feedback on attempts 2 and 3
     second_call = gen.await_args_list[1]
@@ -1212,7 +1212,7 @@ async def test_capped_at_three_attempts_returns_last_text():
     gen = AsyncMock(side_effect=["v1", "v2", "v3"])
     eva = AsyncMock(
         return_value=EvalResult(
-            matched=False, predicted_grade="5", feedback="too hard"
+            appropriate=False, predicted_grade="5", feedback="too hard"
         )
     )
     queue: asyncio.Queue = asyncio.Queue()
@@ -1227,7 +1227,7 @@ async def test_capped_at_three_attempts_returns_last_text():
 
     events = await _drain(queue)
     done = events[-1][1]
-    assert done["matched"] is False
+    assert done["appropriate"] is False
     assert done["attempts"] == 3
     assert done["text"] == "v3"
     assert gen.await_count == 3
@@ -1237,7 +1237,7 @@ async def test_evaluator_unavailable_short_circuits():
     gen = AsyncMock(side_effect=["v1", "v2", "v3"])
     eva = AsyncMock(
         return_value=EvalResult(
-            matched=False, predicted_grade=None, feedback="evaluator unavailable"
+            appropriate=False, predicted_grade=None, feedback="evaluator unavailable"
         )
     )
     queue: asyncio.Queue = asyncio.Queue()
@@ -1252,7 +1252,7 @@ async def test_evaluator_unavailable_short_circuits():
 
     events = await _drain(queue)
     done = events[-1][1]
-    assert done["matched"] is False
+    assert done["appropriate"] is False
     assert done["attempts"] == 1
     assert done["predicted_grade"] is None
     assert gen.await_count == 1  # did not burn more generations
@@ -1309,7 +1309,7 @@ async def run_topic(
     last_text = ""
     last_predicted: str | None = None
     attempt = 0
-    matched = False
+    appropriate = False
 
     for attempt in range(1, MAX_RETRIES + 1):
         await queue.put(("attempt", {"story_id": sid, "attempt": attempt}))
@@ -1341,8 +1341,8 @@ async def run_topic(
 
         result = await evaluate(last_text, params.reading_level)
         last_predicted = result.predicted_grade
-        if result.matched:
-            matched = True
+        if result.appropriate:
+            appropriate = True
             break
         if result.feedback == "evaluator unavailable":
             break
@@ -1355,7 +1355,7 @@ async def run_topic(
                 "story_id": sid,
                 "text": last_text,
                 "predicted_grade": last_predicted,
-                "matched": matched,
+                "appropriate": appropriate,
                 "attempts": attempt,
             },
         )
@@ -1401,7 +1401,7 @@ from app.schemas import EvalResult
 async def test_run_batch_streams_events_for_all_topics(monkeypatch):
     gen = AsyncMock(return_value="story")
     eva = AsyncMock(
-        return_value=EvalResult(matched=True, predicted_grade="3", feedback="ok")
+        return_value=EvalResult(appropriate=True, predicted_grade="3", feedback="ok")
     )
     params = TopicParams(
         child_name="Maya",
@@ -1527,7 +1527,7 @@ def client(monkeypatch):
         "evaluate_grade_level",
         AsyncMock(
             return_value=EvalResult(
-                matched=True, predicted_grade="3", feedback="on level"
+                appropriate=True, predicted_grade="3", feedback="on level"
             )
         ),
     )
@@ -2467,7 +2467,7 @@ export type SseEvent =
       story_id: string;
       text: string;
       predicted_grade: string | null;
-      matched: boolean;
+      appropriate: boolean;
       attempts: number;
     }
   | { type: "error"; story_id: string | null; message: string }
@@ -2516,7 +2516,7 @@ describe("streamSse", () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValue(
       makeStream([
         'event: started\ndata: {"story_id":"a","topic":"Soccer"}\n\n',
-        'event: done\ndata: {"story_id":"a","text":"hi","predicted_grade":"3","matched":true,"attempts":1}\n\n',
+        'event: done\ndata: {"story_id":"a","text":"hi","predicted_grade":"3","appropriate":true,"attempts":1}\n\n',
         "event: complete\ndata: {}\n\n",
       ]),
     );
@@ -2957,14 +2957,14 @@ describe("StoryCard", () => {
     expect(screen.getByText(/Generating/i)).toBeInTheDocument();
   });
 
-  it("shows text and no warning when matched", () => {
+  it("shows text and no warning when appropriate", () => {
     render(
       <StoryCard
         state={{
           ...baseState,
           status: "done",
           text: "Once upon a time.",
-          matched: true,
+          appropriate: true,
           predicted_grade: "3",
           attempts: 1,
         }}
@@ -2982,14 +2982,14 @@ describe("StoryCard", () => {
     expect(screen.queryByText(/couldn't confirm/i)).not.toBeInTheDocument();
   });
 
-  it("shows the warning badge when not matched", () => {
+  it("shows the warning badge when not appropriate", () => {
     render(
       <StoryCard
         state={{
           ...baseState,
           status: "done",
           text: "Body.",
-          matched: false,
+          appropriate: false,
           predicted_grade: "5",
           attempts: 3,
         }}
@@ -3026,7 +3026,7 @@ export interface StoryCardState {
   status: "pending" | "done" | "error";
   attempts: number;
   text?: string;
-  matched?: boolean;
+  appropriate?: boolean;
   predicted_grade?: string | null;
   error?: string;
 }
@@ -3076,7 +3076,7 @@ export default function StoryCard({ state, request, onPreviewPdf }: Props) {
         <h3>
           For {request.child_name} · {state.topic}
         </h3>
-        {state.status === "done" && state.matched === false && (
+        {state.status === "done" && state.appropriate === false && (
           <span className="badge warning">
             Couldn't confirm reading level
           </span>
@@ -3144,7 +3144,7 @@ const SCRIPT: SseEvent[] = [
     type: "done",
     story_id: "a",
     text: "A body.",
-    matched: true,
+    appropriate: true,
     predicted_grade: "3",
     attempts: 1,
   },
@@ -3153,7 +3153,7 @@ const SCRIPT: SseEvent[] = [
     type: "done",
     story_id: "b",
     text: "B body.",
-    matched: false,
+    appropriate: false,
     predicted_grade: "5",
     attempts: 3,
   },
@@ -3314,7 +3314,7 @@ export default function StoryList({ events, request, onPreviewPdf }: Props) {
               ...s[ev.story_id],
               status: "done",
               text: ev.text,
-              matched: ev.matched,
+              appropriate: ev.appropriate,
               predicted_grade: ev.predicted_grade,
               attempts: ev.attempts,
             },
@@ -3412,7 +3412,7 @@ const STATE = {
   topic: "Soccer",
   status: "done" as const,
   text: "Body.",
-  matched: true,
+  appropriate: true,
   attempts: 1,
 };
 

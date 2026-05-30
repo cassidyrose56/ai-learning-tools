@@ -25,7 +25,7 @@ text.
 - Grade-level already rolls up most of these dimensions in its rubric.
 - Cost & latency: a 12-topic × 3-attempt batch with all six evaluators = 216 Gemini calls (each up to 120s in the upstream notebook).
 - The UI needs real design work to render and act on a 5-axis score —
-  v1's "matched / not matched / unavailable" badge doesn't translate.
+  v1's "appropriate / not appropriate / unavailable" badge doesn't translate.
 
 ### Implementation paths (cheapest → most ambitious)
 

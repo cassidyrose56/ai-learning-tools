@@ -148,7 +148,7 @@ PRESETS = {
   Prior-attempt evaluator feedback, when present, is appended as a revision
   instruction.
 - **`evaluator.py`** — `evaluate_grade_level(text, target_reading_level) ->
-  EvalResult(matched: bool, predicted_grade: str | None, feedback: str)`.
+  EvalResult(appropriate: bool, predicted_grade: str | None, feedback: str)`.
   Loads the system + user prompts from
   `backend/app/evaluator_prompts/grade-level/<Settings.evaluator_prompt_version>/`
   at startup. Calls Gemini 2.5 Pro via `langchain-google-genai`
@@ -158,10 +158,10 @@ PRESETS = {
   scaffolding_needed}` where `grade` and `alternative_grade` are **grade
   *bands*** (`K-1, 2-3, 4-5, 6-8, 9-10, 11-CCR`), not single grades.
 
-  Band-to-grade mapping for `matched`: we expand the teacher's single-grade
+  Band-to-grade mapping for `appropriate`: we expand the teacher's single-grade
   target (`K|1|2|3|4|5`) to the band the rubric uses for that grade
   (`K → K-1`, `1 → K-1`, `2 → 2-3`, `3 → 2-3`, `4 → 4-5`, `5 → 4-5`) and
-  set `matched = (predicted_band == expected_band)`. `predicted_grade` on
+  set `appropriate = (predicted_band == expected_band)`. `predicted_grade` on
   the wire carries the returned band string (e.g. `"2-3"`) — we kept the
   field name for back-compat with SSE events but the value is a band, not
   a single grade. On a mismatch, `feedback` is built from
@@ -171,7 +171,7 @@ PRESETS = {
   Transport behavior unchanged: retries the Gemini call up to
   `EVALUATOR_TRANSPORT_RETRIES` times with exponential backoff (0.5s, 1s,
   2s) on transient errors (network failures, 5xx, rate-limit, malformed
-  JSON). If all retries fail, returns `EvalResult(matched=False,
+  JSON). If all retries fail, returns `EvalResult(appropriate=False,
   predicted_grade=None, feedback="evaluator unavailable")`.
 - **`pipeline.py`** — `run_topic(topic, params, queue)`. For each topic:
 
@@ -184,12 +184,12 @@ PRESETS = {
       emit "attempt"
       text = await generator.generate_story(..., feedback=feedback)
       eval_result = await evaluator.evaluate_grade_level(text, reading_level)
-      if eval_result.matched:
-          emit "done"(matched=True, attempts=attempt); return
+      if eval_result.appropriate:
+          emit "done"(appropriate=True, attempts=attempt); return
       if eval_result.feedback == "evaluator unavailable":
           break    # don't burn more generations on a dead judge
       feedback = eval_result.feedback
-  emit "done"(matched=False, attempts=attempt, text=last_text)
+  emit "done"(appropriate=False, attempts=attempt, text=last_text)
   ```
 
 - **`orchestrator.py`** — Fans out N topics with `asyncio.gather`. Each
@@ -232,7 +232,7 @@ PRESETS = {
   (each calls `/api/export/bundle` and downloads a `.zip` of the
   individual files).
 - **`components/StoryCard.tsx`** — Skeleton on `started`, final text on
-  `done`, small warning badge if `matched: false`. Two buttons:
+  `done`, small warning badge if `appropriate: false`. Two buttons:
   **Download as Word** (direct download, plain text) and **Download as
   PDF** (opens the PDF preview modal — see below). Small explanatory
   line below the buttons: *"PDFs are pre-formatted for printing. Word
@@ -328,7 +328,7 @@ Response: `text/event-stream`. Each event is `event: <type>\ndata: <json>\n\n`.
 |-------------|------------------------------------------------------------------------|-------------------------------|
 | `started`   | `{ story_id, topic }`                                                  | each topic begins             |
 | `attempt`   | `{ story_id, attempt }`                                                | each generate+evaluate cycle  |
-| `done`      | `{ story_id, text, predicted_grade, matched, attempts }`               | topic finished                |
+| `done`      | `{ story_id, text, predicted_grade, appropriate, attempts }`               | topic finished                |
 | `error`     | `{ story_id, message }`                                                | unrecoverable error for one topic; others continue |
 | `complete`  | `{}`                                                                   | all topics finished           |
 
@@ -434,7 +434,7 @@ TDD: write tests first for each module.
 - **`test_evaluator.py`** — Mock `ChatGoogleGenerativeAI`. Verifies: parses
   well-formed judge JSON (`{reasoning, grade, alternative_grade,
   scaffolding_needed}`) into `EvalResult`; band-to-grade mapping
-  (`K|1 → K-1`, `2|3 → 2-3`, `4|5 → 4-5`) determines `matched`; revision
+  (`K|1 → K-1`, `2|3 → 2-3`, `4|5 → 4-5`) determines `appropriate`; revision
   feedback string contains `alternative_grade` + `scaffolding_needed`, not
   just `reasoning`; retries 3× on transient errors with backoff; returns
   `"evaluator unavailable"` after exhausting transport retries; reads the
@@ -446,8 +446,8 @@ TDD: write tests first for each module.
   from `pages × WORDS_PER_PAGE[(reading_level, include_drawing_box)]`
   (test both box-on and box-off rows to confirm the doubling).
 - **`test_pipeline.py`** — Inject fake generator/evaluator. Four key paths:
-  matched on attempt 1; matched on attempt 3 after two mismatches; capped at
-  3 with `matched=False`; evaluator-unavailable short-circuits the outer
+  appropriate on attempt 1; appropriate on attempt 3 after two mismatches; capped at
+  3 with `appropriate=False`; evaluator-unavailable short-circuits the outer
   loop.
 - **`test_api.py`** — FastAPI `TestClient`. Verifies: `POST /api/generate`
   returns `text/event-stream`; emits `started`/`attempt`/`done`/`complete`
@@ -476,7 +476,7 @@ TDD: write tests first for each module.
   payload.
 - **Frontend `StoryList.test.tsx`** — Feed a scripted SSE event sequence;
   verify a card appears on `started`, updates on `attempt`, finalizes on
-  `done`, shows the warning badge when `matched: false`, and that the
+  `done`, shows the warning badge when `appropriate: false`, and that the
   download buttons call the right endpoints.
 - **Frontend `PdfPreviewModal.test.tsx`** — RTL: clicking "Download as
   PDF" puts the button in a loading state and calls `POST /api/export`

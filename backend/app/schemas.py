@@ -34,7 +34,7 @@ class BundleRequest(BaseModel):
 
 
 class EvalResult(BaseModel):
-    matched: bool
+    appropriate: bool
     predicted_grade: str | None
     feedback: str
 
@@ -53,7 +53,7 @@ class DoneEvent(BaseModel):
     story_id: str
     text: str
     predicted_grade: str | None
-    matched: bool
+    appropriate: bool
     attempts: int
 
 
