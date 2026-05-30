@@ -25,7 +25,7 @@ async def _drain(queue: asyncio.Queue) -> list[tuple[str, dict]]:
     return events
 
 
-async def test_appropriate_on_first_attempt(monkeypatch):
+async def test_appropriate_on_first_attempt():
     gen = AsyncMock(return_value="story1")
     eva = AsyncMock(
         return_value=EvalResult(appropriate=True, predicted_grade="3", feedback="ok")
@@ -48,7 +48,7 @@ async def test_appropriate_on_first_attempt(monkeypatch):
     assert gen.await_count == 1
 
 
-async def test_appropriate_after_two_mismatches(monkeypatch):
+async def test_appropriate_after_two_mismatches():
     gen = AsyncMock(side_effect=["v1", "v2", "v3"])
     eva = AsyncMock(
         side_effect=[

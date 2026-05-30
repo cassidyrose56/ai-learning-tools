@@ -45,6 +45,8 @@ def _llm() -> ChatGoogleGenerativeAI:
 
 _BACKOFF = [0.5, 1.0, 2.0]
 
+EVALUATOR_UNAVAILABLE_FEEDBACK = "evaluator unavailable"
+
 
 def _build_feedback(payload: dict) -> str:
     # `scaffolding_needed` (from upstream rubric) describes teacher-facing
@@ -114,5 +116,5 @@ async def evaluate_grade_level(text: str, target_reading_level: str) -> EvalResu
                 await asyncio.sleep(_BACKOFF[attempt])
     log.error("evaluator unavailable after retries: %s", last_err)
     return EvalResult(
-        appropriate=False, predicted_grade=None, feedback="evaluator unavailable"
+        appropriate=False, predicted_grade=None, feedback=EVALUATOR_UNAVAILABLE_FEEDBACK
     )

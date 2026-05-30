@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from typing import Awaitable, Callable
 
 from app.config import MAX_RETRIES
+from app.evaluator import EVALUATOR_UNAVAILABLE_FEEDBACK
 from app.pedagogy import WORDS_PER_PAGE
 from app.schemas import EvalResult
 
@@ -74,7 +75,7 @@ async def run_topic(
         if result.appropriate:
             appropriate = True
             break
-        if result.feedback == "evaluator unavailable":
+        if result.feedback == EVALUATOR_UNAVAILABLE_FEEDBACK:
             break
         feedback = result.feedback
 
