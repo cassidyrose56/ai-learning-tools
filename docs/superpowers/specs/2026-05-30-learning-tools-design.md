@@ -72,6 +72,8 @@ No persistence, no accounts. Each generation is ephemeral.
   the reading level changes, unless the teacher has manually edited it.
   Helper text under the field: *"Defaults to leveled-reader values for the
   selected reading level. Adjust for longer or shorter pages."*
+- **Drawing box** — checkbox, *"Add a blank box for the student to draw a
+  picture"*. Applies to PDF output only.
 - **Topics** — preset categories that expand to ~6 subtopic chips each, plus
   an "Add custom" input per category. The flat list of selected subtopics
   (preset + custom) is what's sent to the backend. One story per subtopic.
@@ -152,10 +154,26 @@ PRESETS = {
   `run_topic` writes into a shared `asyncio.Queue`. The SSE handler drains
   the queue, so the fastest-finishing story shows up first regardless of
   topic order.
-- **`export.py`** — `render_docx(story) -> bytes` (python-docx),
-  `render_pdf(story) -> bytes` (reportlab). Both produce a title block
-  (`"For <child_name>"` plus the topic), then paragraphs split on blank
-  lines, ~12pt body.
+- **`export.py`** — two renderers with different ambitions:
+  - **`render_docx(story) -> bytes`** (python-docx): plain Word document.
+    Title line (`"For <child_name>"` plus the topic), then paragraphs. No
+    page-fill logic, no drawing box, no font-size tuning. We rely on
+    Word's defaults. Rationale: python-docx can't measure rendered layout,
+    so any "pre-formatting" we do is guess-work that the teacher would
+    have to redo anyway.
+  - **`render_pdf(story, layout) -> bytes`** (reportlab): pre-formatted
+    PDF designed to be printed and handed to a student. Layout
+    parameters:
+    - Body font size derived from reading level:
+      `K:24pt, 1:20pt, 2:18pt, 3:16pt, 4:14pt, 5:14pt`.
+    - Page margins ~0.75".
+    - Story split into `pages` chunks on sentence boundaries
+      (`split_into_pages(text, n)` helper), one chunk per page with a
+      page break between.
+    - If `include_drawing_box` is true, each page renders a bordered
+      rectangle in the top ~45% of the page; text fills the bottom ~55%.
+      Otherwise text uses the full page area.
+    - Title block (`"For <child_name>"` plus the topic) on page 1 only.
 
 ### Frontend (`frontend/src/`)
 
@@ -169,8 +187,12 @@ PRESETS = {
   contains "Download all as Word" and "Download all as PDF" buttons (each
   hits `/api/export/bundle`).
 - **`components/StoryCard.tsx`** — Skeleton on `started`, final text on
-  `done`, small warning badge if `matched: false`. Two buttons: **Word**,
-  **PDF** (each hits `/api/export`).
+  `done`, small warning badge if `matched: false`. Three actions:
+  **Download Word** (direct download, plain text), **Preview PDF**
+  (fetches once, opens inline preview), and inside the preview a
+  **Download** button that reuses the same blob. Small explanatory
+  line below the buttons: *"PDFs are pre-formatted for printing. Word
+  docs are plain text — apply your own formatting after download."*
 - **`lib/sse.ts`** — `fetch`-plus-`ReadableStream` helper, because native
   `EventSource` doesn't support POST bodies.
 - **`types.ts`** — Shared types mirroring `schemas.py`.
@@ -195,12 +217,14 @@ call.
   "genre": "fiction",
   "pages": 2,
   "words_per_page": 100,
+  "include_drawing_box": true,
   "topics": ["Soccer", "Dinosaurs", "The Moon"]
 }
 ```
 
 `words_per_page` is optional. When omitted, the backend uses
-`DEFAULT_WORDS_PER_PAGE_BY_GRADE[reading_level]`.
+`DEFAULT_WORDS_PER_PAGE_BY_GRADE[reading_level]`. `include_drawing_box`
+defaults to `false` and is passed through to PDF export only.
 
 Response: `text/event-stream`. Each event is `event: <type>\ndata: <json>\n\n`.
 
@@ -235,13 +259,27 @@ update them as events arrive.
 
 ### Export
 
-- `POST /api/export` — body: `{ format: "docx" | "pdf", child_name, topic,
-  genre, text }`. Returns the file as a download with filename
-  `<child_name> - <topic>.<ext>`.
+- `POST /api/export` — body:
+  `{ format: "docx" | "pdf", child_name, topic, genre, text,
+     reading_level, pages, include_drawing_box }`.
+  Returns the file with filename `<child_name> - <topic>.<ext>`.
+  - For `format: "docx"`: a plain Word file. Layout fields
+    (`reading_level`, `pages`, `include_drawing_box`) are ignored.
+  - For `format: "pdf"`: pre-formatted per `render_pdf`. Same endpoint
+    is used by the in-app **PDF preview** — the frontend fetches the
+    PDF bytes once, displays them inline (e.g., `<embed type="application/pdf">`
+    or `<iframe>` over an object URL), and reuses the same blob for
+    the "Download" action so there's no second request.
 - `POST /api/export/bundle` — body:
-  `{ format: "docx" | "pdf", stories: [{ child_name, topic, genre, text }, ...] }`.
-  Returns a `.zip` containing one file per story in the chosen format, named
-  `<child_name> - <topic>.<ext>`.
+  `{ format: "docx" | "pdf", stories: [{ child_name, topic, genre, text,
+     reading_level, pages, include_drawing_box }, ...] }`.
+  Returns a `.zip` containing one file per story in the chosen format.
+  No preview for bundles — the per-story preview is the place to verify
+  layout before fanning out.
+
+**UI note on formats:** below the download buttons on each card, a small
+explanatory line: *"PDFs are pre-formatted for printing. Word docs are
+plain text — apply your own formatting after download."*
 
 ## Project layout
 
@@ -307,10 +345,18 @@ TDD: write tests first for each module.
   returns `text/event-stream`; emits `started`/`attempt`/`done`/`complete`
   for a 2-topic batch; an `error` for one topic doesn't terminate the
   stream; `GET /api/presets` returns the catalog.
-- **`test_export.py`** — A generated `.docx` opens (parse with python-docx
-  round-trip); a generated `.pdf` parses (basic byte-signature + length
-  check); a bundle zip contains the expected N files with the expected
-  names.
+- **`test_export.py`** —
+  - Word: a generated `.docx` opens via python-docx round-trip and
+    contains the title block + body paragraphs. Layout fields
+    (`include_drawing_box`, etc.) are ignored without error.
+  - PDF: a generated `.pdf` parses (PDF signature + non-trivial length);
+    `pages=3` produces 3 PDF pages; `include_drawing_box=true` renders
+    a drawing rectangle on each page (verified by inspecting the PDF
+    content stream for the rect operator); body font size matches the
+    reading-level table.
+  - `split_into_pages(text, n)` splits at sentence boundaries, returns
+    exactly `n` chunks, and never starts a chunk mid-sentence.
+  - Bundle zip contains the expected N files with the expected names.
 - **Frontend `RequestForm.test.tsx`** — RTL: form validates (name + ≥1
   topic + pages ≥ 1); category expansion reveals subtopic chips; custom
   topic input appends to the flat `topics` list; the "Words per page"
