@@ -89,7 +89,10 @@ async def evaluate_grade_level(text: str, target_reading_level: str) -> EvalResu
                 predicted_grade=predicted_band,
                 feedback=_build_feedback(data),
             )
-        except (json.JSONDecodeError, KeyError, Exception) as exc:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001 — transport, parse, and shape errors all retry
+            # JSONDecodeError / KeyError indicate the model returned the
+            # wrong shape; with temperature=0.25 a second roll often parses.
+            # Other Exceptions are SDK / transport failures. Both retry.
             last_err = exc
             log.warning("evaluator attempt %s failed: %s", attempt + 1, exc)
             if attempt < EVALUATOR_TRANSPORT_RETRIES - 1:

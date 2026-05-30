@@ -14,9 +14,11 @@ from app.evaluator import (
 @pytest.fixture(autouse=True)
 def reset_caches():
     eval_mod._load_prompts.cache_clear()
+    eval_mod._llm.cache_clear()
     get_settings.cache_clear()
     yield
     eval_mod._load_prompts.cache_clear()
+    eval_mod._llm.cache_clear()
     get_settings.cache_clear()
 
 
@@ -104,15 +106,16 @@ async def test_malformed_json_treated_as_transient(monkeypatch):
         "alternative_grade": "K-1",
         "scaffolding_needed": "",
     }
-    monkeypatch.setattr(
-        eval_mod,
-        "_llm",
-        lambda: _mock_llm([_ai_message("not json"), _ai_message(good)]),
-    )
+    llm = _mock_llm([_ai_message("not json"), _ai_message(good)])
+    monkeypatch.setattr(eval_mod, "_llm", lambda: llm)
     monkeypatch.setattr(eval_mod.asyncio, "sleep", AsyncMock())
 
     result = await evaluate_grade_level("Some story.", "3")
     assert result.appropriate is True
+    # Lock in: the mock was reused across attempts (one mock, two side_effects
+    # consumed). If a future refactor moves _llm() inside the retry loop, the
+    # lambda would hand back a fresh mock per attempt and the count would be 1.
+    assert llm.ainvoke.await_count == 2
 
 
 async def test_prompt_version_selectable(monkeypatch, tmp_path):
