@@ -64,12 +64,26 @@ export default function StoryCard({ state, request, onPreviewPdf }: Props) {
       </header>
 
       {state.status === "pending" && (
-        <p>Generating (attempt {state.attempts || 1})…</p>
+        <div
+          className="story-skeleton"
+          role="status"
+          aria-busy="true"
+          aria-live="polite"
+        >
+          <span className="sr-only">
+            Generating story (attempt {state.attempts || 1}).
+          </span>
+          <div className="skeleton-line" aria-hidden="true" />
+          <div className="skeleton-line" aria-hidden="true" />
+          <div className="skeleton-line skeleton-line--short" aria-hidden="true" />
+        </div>
       )}
       {state.status === "error" && <p className="error">{state.error}</p>}
       {state.status === "done" && (
         <>
-          <pre className="story-text">{state.text}</pre>
+          <div className="story-text" style={{ whiteSpace: "pre-wrap" }}>
+            {state.text}
+          </div>
           <div className="actions">
             <button onClick={() => downloadDocx(state, request)}>
               Download as Word
@@ -79,8 +93,8 @@ export default function StoryCard({ state, request, onPreviewPdf }: Props) {
             </button>
           </div>
           <p className="helper">
-            PDFs are pre-formatted for printing. Word docs are plain text —
-            apply your own formatting after download.
+            PDFs are pre-formatted for printing. Word docs are plain text.
+            Apply your own formatting after download.
           </p>
         </>
       )}

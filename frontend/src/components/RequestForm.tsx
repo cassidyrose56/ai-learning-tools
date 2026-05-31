@@ -5,7 +5,14 @@ interface Props {
   onSubmit: (req: GenerateRequest) => void;
 }
 
-const LEVELS: ReadingLevel[] = ["K", "1", "2", "3", "4", "5"];
+const LEVELS: { value: ReadingLevel; label: string }[] = [
+  { value: "K", label: "Kindergarten" },
+  { value: "1", label: "1st grade" },
+  { value: "2", label: "2nd grade" },
+  { value: "3", label: "3rd grade" },
+  { value: "4", label: "4th grade" },
+  { value: "5", label: "5th grade" },
+];
 
 export default function RequestForm({ onSubmit }: Props) {
   const [presets, setPresets] = useState<Presets>({});
@@ -17,7 +24,7 @@ export default function RequestForm({ onSubmit }: Props) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [customDrafts, setCustomDrafts] = useState<Record<string, string>>({});
-  const [errors, setErrors] = useState<string[]>([]);
+  const [errors, setErrors] = useState<Record<string, string>>({});
 
   useEffect(() => {
     fetch("/api/presets")
@@ -52,12 +59,12 @@ export default function RequestForm({ onSubmit }: Props) {
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    const errs: string[] = [];
-    if (!childName.trim()) errs.push("Student name is required.");
-    if (selected.size === 0) errs.push("Pick at least one topic.");
-    if (pages < 1) errs.push("Pages must be at least 1.");
-    setErrors(errs);
-    if (errs.length) return;
+    const next: Record<string, string> = {};
+    if (!childName.trim()) next.childName = "Student name is required.";
+    if (selected.size === 0) next.topics = "Pick at least one topic.";
+    if (pages < 1) next.pages = "Pages must be at least 1.";
+    setErrors(next);
+    if (Object.keys(next).length) return;
     onSubmit({
       child_name: childName.trim(),
       reading_level: readingLevel,
@@ -74,10 +81,17 @@ export default function RequestForm({ onSubmit }: Props) {
         Student's name
         <input
           aria-label="Student's name"
+          aria-invalid={errors.childName ? true : undefined}
+          aria-describedby={errors.childName ? "err-childName" : undefined}
           value={childName}
           onChange={(e) => setChildName(e.target.value)}
         />
       </label>
+      {errors.childName && (
+        <p id="err-childName" className="error">
+          {errors.childName}
+        </p>
+      )}
 
       <label>
         Reading level
@@ -86,8 +100,8 @@ export default function RequestForm({ onSubmit }: Props) {
           onChange={(e) => setReadingLevel(e.target.value as ReadingLevel)}
         >
           {LEVELS.map((l) => (
-            <option key={l} value={l}>
-              {l}
+            <option key={l.value} value={l.value}>
+              {l.label}
             </option>
           ))}
         </select>
@@ -114,10 +128,17 @@ export default function RequestForm({ onSubmit }: Props) {
         <input
           type="number"
           min={1}
+          aria-invalid={errors.pages ? true : undefined}
+          aria-describedby={errors.pages ? "err-pages" : undefined}
           value={pages}
           onChange={(e) => setPages(parseInt(e.target.value, 10) || 0)}
         />
       </label>
+      {errors.pages && (
+        <p id="err-pages" className="error">
+          {errors.pages}
+        </p>
+      )}
 
       <label>
         <input
@@ -131,7 +152,10 @@ export default function RequestForm({ onSubmit }: Props) {
         The drawing box appears only in PDF downloads. Word downloads are plain text.
       </p>
 
-      <div className="categories">
+      <div
+        className="categories"
+        aria-describedby={errors.topics ? "err-topics" : undefined}
+      >
         {Object.entries(presets).map(([category, subtopics]) => (
           <div key={category}>
             <button type="button" onClick={() => toggleExpanded(category)}>
@@ -175,12 +199,16 @@ export default function RequestForm({ onSubmit }: Props) {
         ))}
       </div>
 
-      {errors.length > 0 && (
-        <ul className="errors" role="alert">
-          {errors.map((e) => (
-            <li key={e}>{e}</li>
-          ))}
-        </ul>
+      {errors.topics && (
+        <p id="err-topics" className="error">
+          {errors.topics}
+        </p>
+      )}
+
+      {Object.keys(errors).length > 0 && (
+        <div role="alert" aria-live="polite" className="form-errors">
+          Please fix the {Object.keys(errors).length === 1 ? "error" : "errors"} above before generating.
+        </div>
       )}
 
       <button type="submit">Generate</button>

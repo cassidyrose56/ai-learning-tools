@@ -112,14 +112,20 @@ export default function StoryList({ events, request, onPreviewPdf }: Props) {
         </button>
       </header>
       <div className="story-list">
-        {list.map((state) => (
-          <StoryCard
-            key={state.story_id}
-            state={state}
-            request={request}
-            onPreviewPdf={onPreviewPdf}
-          />
-        ))}
+        {list.length === 0 ? (
+          <p className="empty">
+            Stories will appear here as they are generated.
+          </p>
+        ) : (
+          list.map((state) => (
+            <StoryCard
+              key={state.story_id}
+              state={state}
+              request={request}
+              onPreviewPdf={onPreviewPdf}
+            />
+          ))
+        )}
       </div>
     </section>
   );
