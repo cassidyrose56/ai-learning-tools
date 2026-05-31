@@ -13,7 +13,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file="../.env", extra="ignore")
 
     anthropic_api_key: str = ""
-    google_api_key: str = ""
+    gemini_api_key: str = ""
     openai_api_key: str = ""  # reserved for v2; not used in v1
     claude_model: str = "claude-sonnet-4-6"
     gemini_model: str = "gemini-2.5-pro"

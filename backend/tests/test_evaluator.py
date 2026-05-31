@@ -153,3 +153,24 @@ async def test_prompt_version_selectable(monkeypatch, tmp_path):
     # The fake v2 system prompt should have been used
     sent = "".join(getattr(m, "content", "") for m in captured[0])
     assert "fake v2 system" in sent
+
+
+async def test_parses_response_wrapped_in_markdown_code_fence(monkeypatch):
+    # Gemini 2.5 Pro routinely wraps JSON output in ```json ... ``` fences
+    # despite "Return JSON only" instructions. The evaluator must tolerate
+    # that without burning all three retries.
+    payload = {
+        "reasoning": "ok",
+        "grade": "2-3",
+        "alternative_grade": "K-1",
+        "scaffolding_needed": "",
+        "revision_guidance": "",
+    }
+    fenced = f"```json\n{json.dumps(payload)}\n```"
+    llm = _mock_llm([_ai_message(fenced)])
+    monkeypatch.setattr(eval_mod, "_llm", lambda: llm)
+
+    result = await evaluate_grade_level("Some story.", "3")
+    assert result.appropriate is True
+    assert result.predicted_grade == "2-3"
+    assert llm.ainvoke.await_count == 1

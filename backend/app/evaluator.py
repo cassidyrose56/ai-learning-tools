@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+import re
 from functools import lru_cache
 from pathlib import Path
 
@@ -39,13 +40,22 @@ def _llm() -> ChatGoogleGenerativeAI:
         model=get_settings().gemini_model,
         temperature=0.25,
         timeout=120,
-        google_api_key=get_settings().google_api_key,
+        google_api_key=get_settings().gemini_api_key,
     )
 
 
 _BACKOFF = [0.5, 1.0, 2.0]
 
 EVALUATOR_UNAVAILABLE_FEEDBACK = "evaluator unavailable"
+
+# Gemini 2.5 Pro wraps JSON output in markdown code fences despite "Return JSON
+# only" instructions. Strip an optional ```json ... ``` (or ``` ... ```) wrapper.
+_CODE_FENCE = re.compile(r"^\s*```(?:json)?\s*\n?(.*?)\n?```\s*$", re.DOTALL | re.IGNORECASE)
+
+
+def _strip_code_fence(raw: str) -> str:
+    m = _CODE_FENCE.match(raw)
+    return m.group(1) if m else raw
 
 
 def _build_feedback(payload: dict) -> str:
@@ -99,7 +109,7 @@ async def evaluate_grade_level(text: str, target_reading_level: str) -> EvalResu
                 [SystemMessage(content=system_prompt), HumanMessage(content=hydrated_user)]
             )
             raw = response.content or ""
-            data = json.loads(raw)
+            data = json.loads(_strip_code_fence(raw))
             predicted_band = str(data["grade"])
             return EvalResult(
                 appropriate=(predicted_band == expected_band),

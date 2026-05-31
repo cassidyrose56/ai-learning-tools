@@ -8,11 +8,11 @@ def test_retry_caps():
 
 def test_settings_reads_env(monkeypatch):
     monkeypatch.setenv("ANTHROPIC_API_KEY", "anth-test")
-    monkeypatch.setenv("GOOGLE_API_KEY", "g-test")
+    monkeypatch.setenv("GEMINI_API_KEY", "g-test")
     get_settings.cache_clear()
     s = get_settings()
     assert s.anthropic_api_key == "anth-test"
-    assert s.google_api_key == "g-test"
+    assert s.gemini_api_key == "g-test"
     assert s.claude_model == "claude-sonnet-4-6"
     assert s.gemini_model == "gemini-2.5-pro"
     assert s.evaluator_prompt_version == "v1"
