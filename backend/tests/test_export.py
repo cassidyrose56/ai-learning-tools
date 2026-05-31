@@ -177,3 +177,22 @@ def test_pdf_uses_per_grade_leading(monkeypatch):
     # Even after picking the max-gap (which includes the title->body jump
     # in both cases), K's body leading must dominate grade 5's.
     assert k_leading > g5_leading
+
+
+from app.export import render_bundle
+
+
+def test_bundle_zip_contains_one_file_per_story():
+    stories = [make_story(topic="Soccer"), make_story(topic="The Moon")]
+    blob = render_bundle(stories, fmt="docx")
+    with zipfile.ZipFile(io.BytesIO(blob)) as zf:
+        names = sorted(zf.namelist())
+    assert names == ["Maya_Soccer.docx", "Maya_The_Moon.docx"]
+
+
+def test_bundle_pdf_zip_files_are_pdfs():
+    stories = [make_story(topic="Soccer", text="One. Two.")]
+    blob = render_bundle(stories, fmt="pdf")
+    with zipfile.ZipFile(io.BytesIO(blob)) as zf:
+        with zf.open("Maya_Soccer.pdf") as f:
+            assert f.read(4) == b"%PDF"

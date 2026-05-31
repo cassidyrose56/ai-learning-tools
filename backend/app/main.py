@@ -4,12 +4,12 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 
 from app.evaluator import evaluate_grade_level
-from app.export import StoryInput, render_docx, render_pdf, safe_filename
+from app.export import StoryInput, render_bundle, render_docx, render_pdf, safe_filename
 from app.generator import generate_story
 from app.orchestrator import run_batch
 from app.pipeline import TopicParams
 from app.presets import PRESETS
-from app.schemas import ExportRequest, GenerateRequest
+from app.schemas import BundleRequest, ExportRequest, GenerateRequest
 
 app = FastAPI(title="AI Learning Tools")
 
@@ -81,5 +81,29 @@ async def export(request: ExportRequest) -> Response:
     return Response(
         content=blob,
         media_type=media,
+        headers={"content-disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@app.post("/api/export/bundle")
+async def export_bundle(request: BundleRequest) -> Response:
+    inputs = [
+        StoryInput(
+            child_name=s.child_name,
+            topic=s.topic,
+            genre=s.genre,
+            text=s.text,
+            reading_level=s.reading_level,
+            pages=s.pages,
+            include_drawing_box=s.include_drawing_box,
+        )
+        for s in request.stories
+    ]
+    blob = render_bundle(inputs, fmt=request.format)
+    child = safe_filename(request.stories[0].child_name, "stories").split("_")[0]
+    filename = f"{child}_stories.zip"
+    return Response(
+        content=blob,
+        media_type="application/zip",
         headers={"content-disposition": f'attachment; filename="{filename}"'},
     )

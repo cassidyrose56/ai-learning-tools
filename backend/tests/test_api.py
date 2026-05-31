@@ -120,3 +120,33 @@ def test_export_pdf_returns_pdf_bytes(client):
     assert r.headers["content-type"] == "application/pdf"
     assert r.content[:4] == b"%PDF"
     assert "Maya_Soccer.pdf" in r.headers["content-disposition"]
+
+
+def test_export_bundle_returns_zip(client):
+    body = {
+        "format": "docx",
+        "stories": [
+            {
+                "child_name": "Maya",
+                "topic": "Soccer",
+                "genre": "fiction",
+                "text": "One. Two.",
+                "reading_level": "3",
+                "pages": 1,
+                "include_drawing_box": False,
+            },
+            {
+                "child_name": "Maya",
+                "topic": "Dinosaurs",
+                "genre": "fiction",
+                "text": "One. Two.",
+                "reading_level": "3",
+                "pages": 1,
+                "include_drawing_box": False,
+            },
+        ],
+    }
+    r = client.post("/api/export/bundle", json=body)
+    assert r.status_code == 200
+    assert r.headers["content-type"] == "application/zip"
+    assert "Maya_stories.zip" in r.headers["content-disposition"]

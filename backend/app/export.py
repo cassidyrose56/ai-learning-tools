@@ -1,5 +1,6 @@
 import io
 import re
+import zipfile
 from dataclasses import dataclass
 
 from docx import Document
@@ -146,3 +147,17 @@ def _draw_wrapped(c, text: str, x: float, y: float, max_width: float, leading: f
             line = [w]
     if line:
         c.drawString(x, cursor_y, " ".join(line))
+
+
+def render_bundle(stories: list[StoryInput], *, fmt: str) -> bytes:
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        for s in stories:
+            base = safe_filename(s.child_name, s.topic)
+            if fmt == "docx":
+                zf.writestr(f"{base}.docx", render_docx(s))
+            elif fmt == "pdf":
+                zf.writestr(f"{base}.pdf", render_pdf(s))
+            else:
+                raise ValueError(f"unknown format {fmt!r}")
+    return buf.getvalue()
