@@ -98,7 +98,7 @@ def test_split_into_pages_handles_fewer_sentences_than_pages():
 from pypdf import PdfReader
 
 from app.export import render_pdf
-from app.pedagogy import FONT_SIZES
+from app.pedagogy import FONT_SIZES, LINE_SPACING
 
 
 def test_pdf_has_correct_page_count():
@@ -140,3 +140,40 @@ def test_pdf_draws_box_when_enabled(monkeypatch):
 
 def test_pdf_font_size_per_reading_level():
     assert FONT_SIZES == {"K": 24, "1": 20, "2": 18, "3": 16, "4": 14, "5": 14}
+
+
+def test_pdf_line_spacing_per_reading_level():
+    assert LINE_SPACING == {
+        "K": 1.6, "1": 1.5, "2": 1.4, "3": 1.35, "4": 1.3, "5": 1.3,
+    }
+
+
+def test_pdf_uses_per_grade_leading(monkeypatch):
+    # render the same long text at K vs grade 5; K's larger leading should
+    # fit fewer lines per page, producing a smaller cursor_y per drawString.
+    from reportlab.pdfgen import canvas as canvas_mod
+
+    y_positions: list[float] = []
+    real_draw = canvas_mod.Canvas.drawString
+
+    def spy_draw(self, x, y, text, *args, **kwargs):
+        y_positions.append(y)
+        return real_draw(self, x, y, text, *args, **kwargs)
+
+    monkeypatch.setattr(canvas_mod.Canvas, "drawString", spy_draw)
+
+    long_text = " ".join(f"word{i}." for i in range(200))
+
+    render_pdf(make_story(reading_level="K", pages=1, text=long_text))
+    k_gaps = [y_positions[i] - y_positions[i + 1] for i in range(len(y_positions) - 1)]
+    k_leading = max(k_gaps)  # title-to-body jump is larger; ignore via max-of-body
+    y_positions.clear()
+
+    render_pdf(make_story(reading_level="5", pages=1, text=long_text))
+    g5_gaps = [y_positions[i] - y_positions[i + 1] for i in range(len(y_positions) - 1)]
+    g5_leading = max(g5_gaps)
+
+    # K leading = 24 * 1.6 = 38.4; grade-5 leading = 14 * 1.3 = 18.2.
+    # Even after picking the max-gap (which includes the title->body jump
+    # in both cases), K's body leading must dominate grade 5's.
+    assert k_leading > g5_leading

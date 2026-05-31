@@ -35,6 +35,14 @@ FONT_SIZES: dict[str, int] = {
     "K": 24, "1": 20, "2": 18, "3": 16, "4": 14, "5": 14,
 }
 
+LINE_SPACING: dict[str, float] = {
+    # Per-grade leading multiplier (line height = font_size * multiplier).
+    # Early readers benefit from extra vertical space between lines —
+    # easier to track from one line to the next without losing place.
+    # Tapers to standard 1.3× by grade 4.
+    "K": 1.6, "1": 1.5, "2": 1.4, "3": 1.35, "4": 1.3, "5": 1.3,
+}
+
 # Single-grade -> Learning Commons grade band. The grade-level rubric
 # only emits bands (K-1, 2-3, 4-5, 6-8, 9-10, 11-CCR); our UI offers
 # single grades. evaluator.py expands the teacher's target grade

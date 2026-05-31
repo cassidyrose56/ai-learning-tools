@@ -7,7 +7,7 @@ from reportlab.lib.pagesizes import LETTER
 from reportlab.lib.units import inch
 from reportlab.pdfgen import canvas as _canvas
 
-from app.pedagogy import FONT_SIZES
+from app.pedagogy import FONT_SIZES, LINE_SPACING
 
 
 @dataclass
@@ -96,7 +96,7 @@ def render_pdf(story: StoryInput) -> bytes:
     width, height = LETTER
     c = _canvas.Canvas(buf, pagesize=LETTER)
     font_size = FONT_SIZES[story.reading_level]
-    leading = font_size * 1.3
+    leading = font_size * LINE_SPACING[story.reading_level]
 
     chunks = split_into_pages(story.text, story.pages)
     title = f'For {story.child_name} — "{story.topic}"'
