@@ -7,39 +7,41 @@
     serif;
   --mono: ui-monospace, "SF Mono", Consolas, monospace;
 
-  --bg: #fbf8f3;
-  --surface: #fffdf8;
-  --surface-2: #f3eee2;
-  --border: #e8e2d4;
-  --border-strong: #d6cfba;
+  --bg: #FDF8EA;
+  --surface: #FFFFFF;
+  --surface-2: #F4ECD6;
+  --border: #ECDFB8;
+  --border-strong: #D9C58C;
 
-  --ink: #2c2a26;
-  --ink-muted: #6a655e;
-  --ink-soft: #9b948a;
+  --ink: #1E1A14;
+  --ink-muted: #5F574A;
+  --ink-soft: #8A8170;
 
-  --accent: #6f9384;
-  --accent-strong: #4a6a5b;
-  --accent-bg: rgba(111, 147, 132, 0.14);
-  --accent-border: rgba(111, 147, 132, 0.45);
-  --accent-on: #ffffff;
+  --accent: #DFA025;
+  --accent-strong: #B27A12;
+  --accent-bg: rgba(223, 160, 37, 0.14);
+  --accent-border: rgba(223, 160, 37, 0.45);
+  --accent-on: #FFFFFF;
 
-  --warning: #8e601e;
-  --warning-bg: rgba(176, 122, 46, 0.14);
-  --warning-border: rgba(176, 122, 46, 0.42);
+  --link-focus: #4A5A8A;
 
-  --error: #a84a3c;
-  --error-bg: rgba(168, 74, 60, 0.1);
+  --warning: #C24D5B;
+  --warning-bg: rgba(194, 77, 91, 0.12);
+  --warning-border: rgba(194, 77, 91, 0.42);
+
+  --error: #C24D5B;
+  --error-bg: rgba(194, 77, 91, 0.12);
 
   --radius-sm: 6px;
   --radius-md: 10px;
   --radius-lg: 14px;
   --radius-pill: 999px;
 
-  --shadow-sm: 0 1px 0 rgba(44, 42, 38, 0.04),
-    0 2px 6px rgba(44, 42, 38, 0.06);
-  --shadow-md: 0 1px 0 rgba(44, 42, 38, 0.05),
-    0 6px 24px rgba(44, 42, 38, 0.1);
-  --shadow-lg: 0 24px 64px rgba(44, 42, 38, 0.22);
+  --shadow-sm: 0 1px 0 rgba(30, 26, 20, 0.04),
+    0 2px 6px rgba(30, 26, 20, 0.06);
+  --shadow-md: 0 1px 0 rgba(30, 26, 20, 0.05),
+    0 6px 24px rgba(30, 26, 20, 0.1);
+  --shadow-lg: 0 24px 64px rgba(30, 26, 20, 0.22);
 
   color-scheme: light dark;
   font-family: var(--sans);
@@ -54,30 +56,65 @@
   -moz-osx-font-smoothing: grayscale;
 }
 
+[data-theme="dark"] {
+  --bg: #1F1B14;
+  --surface: #2A241D;
+  --surface-2: #34291F;
+  --border: #4A3D2C;
+  --border-strong: #5C4A33;
+
+  --ink: #F3EBD8;
+  --ink-muted: #B6A98F;
+  --ink-soft: #8C7E65;
+
+  --accent: #F0B547;
+  --accent-strong: #FFCC6A;
+  --accent-bg: rgba(240, 181, 71, 0.16);
+  --accent-border: rgba(240, 181, 71, 0.45);
+  --accent-on: #1F1B14;
+
+  --link-focus: #8FA1D8;
+
+  --warning: #E48A93;
+  --warning-bg: rgba(228, 138, 147, 0.16);
+  --warning-border: rgba(228, 138, 147, 0.42);
+
+  --error: #E48A93;
+  --error-bg: rgba(228, 138, 147, 0.16);
+
+  --shadow-sm: 0 1px 0 rgba(0, 0, 0, 0.4),
+    0 2px 6px rgba(0, 0, 0, 0.32);
+  --shadow-md: 0 1px 0 rgba(0, 0, 0, 0.4),
+    0 8px 28px rgba(0, 0, 0, 0.42);
+  --shadow-lg: 0 24px 64px rgba(0, 0, 0, 0.62);
+}
+
 @media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #1a1814;
-    --surface: #22201c;
-    --surface-2: #2a2722;
-    --border: #3a362e;
-    --border-strong: #4d4738;
+  :root:not([data-theme]) {
+    --bg: #1F1B14;
+    --surface: #2A241D;
+    --surface-2: #34291F;
+    --border: #4A3D2C;
+    --border-strong: #5C4A33;
 
-    --ink: #f0ebe1;
-    --ink-muted: #b6ad9c;
-    --ink-soft: #7d7768;
+    --ink: #F3EBD8;
+    --ink-muted: #B6A98F;
+    --ink-soft: #8C7E65;
 
-    --accent: #9bbaa9;
-    --accent-strong: #b6d2c3;
-    --accent-bg: rgba(155, 186, 169, 0.18);
-    --accent-border: rgba(155, 186, 169, 0.45);
-    --accent-on: #1a1814;
+    --accent: #F0B547;
+    --accent-strong: #FFCC6A;
+    --accent-bg: rgba(240, 181, 71, 0.16);
+    --accent-border: rgba(240, 181, 71, 0.45);
+    --accent-on: #1F1B14;
 
-    --warning: #d4a76a;
-    --warning-bg: rgba(212, 167, 106, 0.16);
-    --warning-border: rgba(212, 167, 106, 0.4);
+    --link-focus: #8FA1D8;
 
-    --error: #d18476;
-    --error-bg: rgba(209, 132, 118, 0.16);
+    --warning: #E48A93;
+    --warning-bg: rgba(228, 138, 147, 0.16);
+    --warning-border: rgba(228, 138, 147, 0.42);
+
+    --error: #E48A93;
+    --error-bg: rgba(228, 138, 147, 0.16);
 
     --shadow-sm: 0 1px 0 rgba(0, 0, 0, 0.4),
       0 2px 6px rgba(0, 0, 0, 0.32);
@@ -149,7 +186,7 @@ textarea {
 }
 
 :focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--link-focus);
   outline-offset: 2px;
   border-radius: var(--radius-sm);
 }
