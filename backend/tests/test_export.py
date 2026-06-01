@@ -134,7 +134,8 @@ def test_pdf_draws_box_when_enabled(monkeypatch):
     render_pdf(make_story(pages=2, include_drawing_box=False))
     box_without_box = len(rect_calls)
 
-    assert box_with_box >= 2  # at least one rect per page
+    # Box renders on page 1 only, regardless of how many pages the story has.
+    assert box_with_box == 1
     assert box_without_box == 0
 
 
@@ -354,10 +355,10 @@ def test_pdf_paragraphs_are_not_indented(monkeypatch):
         assert abs(x - _MARGIN) < 0.5, (x, _MARGIN)
 
 
-def test_pdf_fills_page_by_scaling_leading(monkeypatch):
+def test_pdf_uses_natural_leading_for_sparse_content(monkeypatch):
     from reportlab.pdfgen import canvas as canvas_mod
     from reportlab.lib.pagesizes import LETTER
-    from app.export import _MARGIN
+    from app.export import _MARGIN, _PARA_GAP_FRAC
     from app.pedagogy import FONT_SIZES, LINE_SPACING
 
     calls: list[tuple[float, str]] = []
@@ -369,7 +370,7 @@ def test_pdf_fills_page_by_scaling_leading(monkeypatch):
 
     monkeypatch.setattr(canvas_mod.Canvas, "drawString", spy_draw)
 
-    # Three short sentences across two paragraphs; should stretch.
+    # Three short sentences across two paragraphs; should NOT stretch.
     text = "Alpha one. Alpha two.\n\nBravo one."
     render_pdf(make_story(reading_level="3", pages=1, text=text))
 
@@ -377,17 +378,40 @@ def test_pdf_fills_page_by_scaling_leading(monkeypatch):
     assert len(ys) >= 2, ys
 
     base_leading = FONT_SIZES["3"] * LINE_SPACING["3"]
-    # Each consecutive y-delta inside a paragraph should be >= base_leading
-    # (the stretch is monotonic - we never shrink below baseline).
-    for a, b in zip(ys, ys[1:]):
-        delta = a - b
-        assert delta + 0.01 >= base_leading, (a, b, delta, base_leading)
-
-    # At least one delta should be strictly greater than base_leading -
-    # otherwise we did not stretch at all and the page is not filled.
+    para_gap = base_leading * _PARA_GAP_FRAC
     deltas = [a - b for a, b in zip(ys, ys[1:])]
-    assert any(d > base_leading + 0.1 for d in deltas), deltas
 
-    # The first body line is near the top margin (no title above it).
+    # Every line-to-line drop is either exactly base_leading (intra-paragraph)
+    # or base_leading + para_gap (across a paragraph boundary). The fill pass
+    # is gone, so deltas never exceed those values.
+    for d in deltas:
+        assert (
+            abs(d - base_leading) < 0.01
+            or abs(d - (base_leading + para_gap)) < 0.01
+        ), (d, base_leading, para_gap)
+
+    # First body line sits near the top margin (no title above it).
     width, height = LETTER
     assert ys[0] > height - _MARGIN - base_leading * 3
+
+
+def test_split_into_pages_balances_by_sentence_count():
+    text = "One. Two. Three. Four. Five. Six. Seven. Eight."
+    chunks = split_into_pages(text, 2)
+    counts = [len(re.findall(r"[.!?]", c)) for c in chunks]
+    assert counts == [4, 4], counts
+
+
+def test_pdf_drawing_box_renders_only_on_first_page(monkeypatch):
+    from reportlab.pdfgen import canvas as canvas_mod
+
+    rect_calls: list[tuple] = []
+    real_rect = canvas_mod.Canvas.rect
+
+    def spy_rect(self, *args, **kwargs):
+        rect_calls.append((args, kwargs))
+        return real_rect(self, *args, **kwargs)
+
+    monkeypatch.setattr(canvas_mod.Canvas, "rect", spy_rect)
+    render_pdf(make_story(pages=3, include_drawing_box=True))
+    assert len(rect_calls) == 1

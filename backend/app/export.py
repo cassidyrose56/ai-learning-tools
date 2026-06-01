@@ -77,49 +77,24 @@ def split_into_pages(text: str, n: int) -> list[str]:
     sentences = _tokenize_sentences(text)
     if not sentences:
         return [""] * n
-    if len(sentences) <= n:
-        chunks = [_join_sentences([s]) for s in sentences]
-        while len(chunks) < n:
-            chunks.append("")
-        return chunks
 
-    total_words = sum(len(s[0].split()) for s in sentences)
-    target = total_words / n
+    per_page, extra = divmod(len(sentences), n)
     chunks: list[str] = []
-    current: list[tuple[str, int]] = []
-    current_words = 0
-    remaining_pages = n
-
-    for i, item in enumerate(sentences):
-        sent, _ = item
-        words = len(sent.split())
-        sentences_left = len(sentences) - i
-        # ensure each remaining page gets at least one sentence
-        if sentences_left <= remaining_pages - len(chunks) - 1 and current:
-            chunks.append(_join_sentences(current))
-            current = [item]
-            current_words = words
-            continue
-        if current and current_words + words > target and len(chunks) < n - 1:
-            chunks.append(_join_sentences(current))
-            current = [item]
-            current_words = words
+    start = 0
+    for page in range(n):
+        size = per_page + (1 if page < extra else 0)
+        if size == 0:
+            chunks.append("")
         else:
-            current.append(item)
-            current_words += words
-
-    if current:
-        chunks.append(_join_sentences(current))
-    while len(chunks) < n:
-        chunks.append("")
-    return chunks[:n]
+            chunks.append(_join_sentences(sentences[start:start + size]))
+            start += size
+    return chunks
 
 
 _MARGIN = 0.75 * inch
 _BOX_FRACTION = 0.45  # drawing box occupies top 45% of page
 _BOX_GAP_LEADING = 1.5
 _PARA_GAP_FRAC = 0.7  # paragraph gap as a fraction of leading
-_FILL_MAX_SCALE = 2.0  # cap leading stretch to 2x baseline
 
 
 def render_pdf(story: StoryInput) -> bytes:
@@ -127,7 +102,8 @@ def render_pdf(story: StoryInput) -> bytes:
     width, height = LETTER
     c = _canvas.Canvas(buf, pagesize=LETTER)
     font_size = FONT_SIZES[story.reading_level]
-    base_leading = font_size * LINE_SPACING[story.reading_level]
+    leading = font_size * LINE_SPACING[story.reading_level]
+    para_gap = leading * _PARA_GAP_FRAC
 
     chunks = split_into_pages(story.text, story.pages)
     text_x = _MARGIN
@@ -136,21 +112,15 @@ def render_pdf(story: StoryInput) -> bytes:
     for idx, chunk in enumerate(chunks):
         text_top = height - _MARGIN
 
-        if story.include_drawing_box:
+        if story.include_drawing_box and idx == 0:
             box_top = text_top
             box_bottom = box_top - (height - 2 * _MARGIN) * _BOX_FRACTION
             box_height = box_top - box_bottom
             c.rect(_MARGIN, box_bottom, width - 2 * _MARGIN, box_height, stroke=1, fill=0)
-            text_top = box_bottom - base_leading * _BOX_GAP_LEADING
+            text_top = box_bottom - leading * _BOX_GAP_LEADING
 
         c.setFont("Helvetica", font_size)
         lines_per_para = _layout_chunk(chunk, text_width, font_size)
-
-        available_height = text_top - _MARGIN
-        scale = _compute_fill_scale(lines_per_para, available_height, base_leading)
-        leading = base_leading * scale
-        para_gap = base_leading * _PARA_GAP_FRAC * scale
-
         _draw_chunk(c, lines_per_para, text_x, text_top, leading, para_gap)
 
         if idx < len(chunks) - 1:
@@ -191,25 +161,6 @@ def _layout_chunk(
 ) -> list[list[str]]:
     paragraphs = [p for p in text.split("\n\n") if p.strip()]
     return [_layout_paragraph(p, max_width, font_size) for p in paragraphs]
-
-
-def _compute_fill_scale(
-    lines_per_para: list[list[str]],
-    available_height: float,
-    base_leading: float,
-) -> float:
-    # Last-baseline lands at: y_top - (N-1) * leading - para_breaks * gap.
-    # We pick leading so that delta matches available_height.
-    total_lines = sum(len(lp) for lp in lines_per_para)
-    if total_lines <= 1:
-        return 1.0
-    para_breaks = max(0, len(lines_per_para) - 1)
-    denom = (total_lines - 1) + para_breaks * _PARA_GAP_FRAC
-    if denom <= 0:
-        return 1.0
-    raw_scale = available_height / (base_leading * denom)
-    # Never shrink below baseline; never stretch beyond cap.
-    return max(1.0, min(_FILL_MAX_SCALE, raw_scale))
 
 
 def _draw_chunk(
