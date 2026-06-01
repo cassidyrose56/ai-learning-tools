@@ -83,7 +83,7 @@ def test_split_into_pages_balanced_lengths():
     text = " ".join(f"Word{i} word{i}." for i in range(50))
     chunks = split_into_pages(text, 4)
     lens = [len(c.split()) for c in chunks]
-    # roughly balanced — no chunk more than 2x the smallest
+    # roughly balanced - no chunk more than 2x the smallest
     assert max(lens) <= 2 * max(min(lens), 1)
 
 
@@ -144,8 +144,123 @@ def test_pdf_font_size_per_reading_level():
 
 def test_pdf_line_spacing_per_reading_level():
     assert LINE_SPACING == {
-        "K": 1.6, "1": 1.5, "2": 1.4, "3": 1.35, "4": 1.3, "5": 1.3,
+        "K": 1.8, "1": 1.7, "2": 1.6, "3": 1.55, "4": 1.5, "5": 1.5,
     }
+
+
+def test_title_uses_colon_not_em_dash(monkeypatch):
+    # DOCX: title paragraph contains "For Maya: \"Soccer\"" and no em-dash.
+    blob = render_docx(make_story(child_name="Maya", topic="Soccer"))
+    doc = Document(io.BytesIO(blob))
+    titles = [p.text for p in doc.paragraphs if p.text]
+    assert any('For Maya: "Soccer"' in t for t in titles)
+    assert not any("—" in t for t in titles)
+
+    # PDF: spy on drawString to inspect the rendered title.
+    from reportlab.pdfgen import canvas as canvas_mod
+
+    drawn: list[str] = []
+    real_draw = canvas_mod.Canvas.drawString
+
+    def spy_draw(self, x, y, text, *args, **kwargs):
+        drawn.append(text)
+        return real_draw(self, x, y, text, *args, **kwargs)
+
+    monkeypatch.setattr(canvas_mod.Canvas, "drawString", spy_draw)
+    render_pdf(make_story(child_name="Maya", topic="Soccer", pages=1))
+    assert any('For Maya: "Soccer"' in s for s in drawn)
+    assert not any("—" in s for s in drawn)
+
+
+def test_pdf_preserves_paragraph_breaks(monkeypatch):
+    # Render a 1-page story whose text has three paragraphs. The drawn
+    # y-coordinates must drop monotonically across body lines, and the
+    # gap at each paragraph boundary must be strictly larger than the
+    # gap inside a paragraph.
+    from reportlab.pdfgen import canvas as canvas_mod
+
+    calls: list[tuple[float, str]] = []
+    real_draw = canvas_mod.Canvas.drawString
+
+    def spy_draw(self, x, y, text, *args, **kwargs):
+        calls.append((y, text))
+        return real_draw(self, x, y, text, *args, **kwargs)
+
+    monkeypatch.setattr(canvas_mod.Canvas, "drawString", spy_draw)
+
+    para_a = "Alpha one. Alpha two. Alpha three."
+    para_b = "Bravo one. Bravo two. Bravo three."
+    para_c = "Charlie one. Charlie two. Charlie three."
+    text = f"{para_a}\n\n{para_b}\n\n{para_c}"
+
+    render_pdf(make_story(reading_level="3", pages=1, text=text))
+
+    # Drop the title call; everything after is body.
+    body = [(y, t) for (y, t) in calls if "For Maya" not in t]
+    ys = [y for (y, _) in body]
+    # monotonically decreasing
+    assert all(ys[i] > ys[i + 1] for i in range(len(ys) - 1)), ys
+
+    # Locate the first drawString that contains text from each paragraph.
+    def first_idx(token: str) -> int:
+        return next(i for i, (_, t) in enumerate(body) if token in t)
+
+    a_first = first_idx("Alpha")
+    b_first = first_idx("Bravo")
+    c_first = first_idx("Charlie")
+
+    # intra-paragraph leading: gap inside Alpha (if Alpha spans multiple lines
+    # at this font size it will; if not, fall back to comparing the gap right
+    # before each paragraph break instead).
+    leading = ys[a_first] - ys[a_first + 1] if (b_first - a_first) > 1 else None
+
+    gap_a_to_b = ys[b_first - 1] - ys[b_first]
+    gap_b_to_c = ys[c_first - 1] - ys[c_first]
+
+    if leading is not None:
+        assert gap_a_to_b > leading, (gap_a_to_b, leading)
+        assert gap_b_to_c > leading, (gap_b_to_c, leading)
+    else:
+        # Single-line paragraphs: the paragraph gaps must at least exceed the
+        # body leading we know we are using.
+        from app.pedagogy import FONT_SIZES, LINE_SPACING
+        body_leading = FONT_SIZES["3"] * LINE_SPACING["3"]
+        assert gap_a_to_b > body_leading
+        assert gap_b_to_c > body_leading
+
+
+def test_pdf_drawing_box_leaves_leading_times_1_5_gap(monkeypatch):
+    # When include_drawing_box=True, the first body drawString's y should
+    # equal (box_bottom - leading * 1.5). We compute box_bottom from the
+    # module constants and the page size, then compare.
+    from reportlab.lib.pagesizes import LETTER
+    from reportlab.lib.units import inch
+    from reportlab.pdfgen import canvas as canvas_mod
+    from app.export import _MARGIN, _BOX_FRACTION
+    from app.pedagogy import FONT_SIZES, LINE_SPACING
+
+    width, height = LETTER
+    font_size = FONT_SIZES["3"]
+    leading = font_size * LINE_SPACING["3"]
+    text_top_before_box = height - _MARGIN - (font_size * 2)
+    box_bottom = text_top_before_box - (height - 2 * _MARGIN) * _BOX_FRACTION
+    expected_first_y = box_bottom - leading * 1.5
+
+    drawn: list[tuple[float, str]] = []
+    real_draw = canvas_mod.Canvas.drawString
+
+    def spy_draw(self, x, y, text, *args, **kwargs):
+        drawn.append((y, text))
+        return real_draw(self, x, y, text, *args, **kwargs)
+
+    monkeypatch.setattr(canvas_mod.Canvas, "drawString", spy_draw)
+    render_pdf(make_story(reading_level="3", pages=1, include_drawing_box=True, text="Body."))
+
+    # First non-title drawString is the body's first line.
+    body = [(y, t) for (y, t) in drawn if "For Maya" not in t]
+    assert body, "expected at least one body line"
+    first_y = body[0][0]
+    assert abs(first_y - expected_first_y) < 0.01, (first_y, expected_first_y)
 
 
 def test_pdf_uses_per_grade_leading(monkeypatch):

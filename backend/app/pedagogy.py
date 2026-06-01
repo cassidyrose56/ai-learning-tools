@@ -1,7 +1,7 @@
 # Editorial / pedagogy constants. Things that encode "what counts as
-# on-level for grade N" — not things the operator tunes via env or UI.
+# on-level for grade N" - not things the operator tunes via env or UI.
 #
-# Coming in later v1 phases (drop into THIS file when they land — don't
+# Coming in later v1 phases (drop into THIS file when they land - don't
 # scatter them across consumer modules):
 #   - GRADE_TO_BAND   single-grade -> Learning Commons band, added in
 #                     Task 4.1 (evaluator)
@@ -37,10 +37,11 @@ FONT_SIZES: dict[str, int] = {
 
 LINE_SPACING: dict[str, float] = {
     # Per-grade leading multiplier (line height = font_size * multiplier).
-    # Early readers benefit from extra vertical space between lines —
+    # Early readers benefit from extra vertical space between lines -
     # easier to track from one line to the next without losing place.
-    # Tapers to standard 1.3× by grade 4.
-    "K": 1.6, "1": 1.5, "2": 1.4, "3": 1.35, "4": 1.3, "5": 1.3,
+    # Tapers down through grade 4 but stays generous; teachers reported
+    # the v1 spacing felt cramped on printed PDFs.
+    "K": 1.8, "1": 1.7, "2": 1.6, "3": 1.55, "4": 1.5, "5": 1.5,
 }
 
 # Single-grade -> Learning Commons grade band. The grade-level rubric
