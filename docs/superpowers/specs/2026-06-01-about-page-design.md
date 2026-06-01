@@ -80,7 +80,7 @@ A writing AI drafts a short story based on the topic, reading level, and length 
 
 If the evaluator confirms the level, the story shows up normally. If it cannot confirm, the story still shows up, but with a small amber note that says the reading level was not confirmed. You stay in control of whether to use it.
 
-The rubric the evaluator uses comes from [Learning Commons](https://learningcommons.org/for-developers/), an open project that publishes evaluators for education content. The grade-level rubric on that page (scroll down a bit; it sits with their developer resources) is the same one this tool checks against.
+The rubric the evaluator uses comes from [Learning Commons](https://learningcommons.org/for-developers/), an open project that publishes evaluators for education content. The grade-level rubric on that page is the same one this tool checks against.
 
 #### Get in touch
 
@@ -132,6 +132,10 @@ No new data flow. The router does not touch sessions or stories. The only state 
 
 - Add `react-router-dom` (latest 6.x) to `frontend/package.json` dependencies.
 - No backend changes.
+
+## Copy review
+
+All user-visible copy on the About page (the four section bodies above) must be passed through the `humanizer` skill at `skills/humanizer/` before merge. If the implementation tweaks any of the copy from what is written in this spec, the tweaked copy goes through the same pass. Hard constraints from that skill that apply here: no em or en dashes, sentence-case headings, no AI-tell vocabulary (vibrant, pivotal, testament, tapestry, underscore, etc.), no rule-of-three formulas, no bolded inline-list headers, no emojis, no chatbot artifacts ("I hope this helps", etc.). The copy in this spec has already been through one humanizer pass, so the implementation can ship it as-is unless edits are made.
 
 ## Open questions
 
