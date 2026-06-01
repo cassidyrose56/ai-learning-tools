@@ -311,3 +311,21 @@ def test_bundle_pdf_zip_files_are_pdfs():
     with zipfile.ZipFile(io.BytesIO(blob)) as zf:
         with zf.open("Maya_Soccer.pdf") as f:
             assert f.read(4) == b"%PDF"
+
+
+def test_split_into_pages_preserves_closing_quotes():
+    # All three sentences (including the one that ends with `."`) must
+    # survive sentence tokenization and end up in the page output.
+    text = (
+        '"Hi," she said. "I am Maya. We just moved here." '
+        '"Did you ride all the way in that truck?" Avi asked.'
+    )
+    chunks = split_into_pages(text, 1)
+    page = chunks[0]
+    assert '"Hi," she said.' in page
+    assert '"I am Maya.' in page
+    assert 'We just moved here."' in page
+    assert '"Did you ride all the way in that truck?" Avi asked.' in page or (
+        '"Did you ride all the way in that truck?"' in page
+        and "Avi asked." in page
+    )

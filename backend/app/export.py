@@ -42,7 +42,7 @@ def render_docx(story: StoryInput) -> bytes:
     return buf.getvalue()
 
 
-_SENTENCE_RE = re.compile(r"[^.!?]+[.!?]+(?:\s|$)")
+_SENTENCE_RE = re.compile(r"[^.!?]+[.!?]+[\"”’')\]]*(?:\s|$)")
 
 
 def _tokenize_sentences(text: str) -> list[tuple[str, int]]:
