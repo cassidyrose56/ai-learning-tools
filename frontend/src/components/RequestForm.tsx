@@ -24,6 +24,7 @@ export default function RequestForm({ onSubmit }: Props) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [customDrafts, setCustomDrafts] = useState<Record<string, string>>({});
+  const [customTopics, setCustomTopics] = useState<Record<string, string[]>>({});
   const [errors, setErrors] = useState<Record<string, string>>({});
 
   useEffect(() => {
@@ -54,6 +55,11 @@ export default function RequestForm({ onSubmit }: Props) {
     const draft = (customDrafts[category] || "").trim();
     if (!draft) return;
     setSelected((prev) => new Set(prev).add(draft));
+    setCustomTopics((prev) => {
+      const existing = prev[category] ?? [];
+      if (existing.includes(draft)) return prev;
+      return { ...prev, [category]: [...existing, draft] };
+    });
     setCustomDrafts((prev) => ({ ...prev, [category]: "" }));
   }
 
@@ -73,6 +79,10 @@ export default function RequestForm({ onSubmit }: Props) {
       include_drawing_box: includeBox,
       topics: Array.from(selected),
     });
+    setSelected(new Set());
+    setCustomDrafts({});
+    setCustomTopics({});
+    setErrors({});
   }
 
   return (
@@ -163,7 +173,7 @@ export default function RequestForm({ onSubmit }: Props) {
             </button>
             {expanded.has(category) && (
               <div>
-                {subtopics.map((sub) => (
+                {subtopics.concat(customTopics[category] ?? []).map((sub) => (
                   <label key={sub}>
                     <input
                       type="checkbox"

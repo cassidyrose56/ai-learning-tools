@@ -80,4 +80,52 @@ describe("RequestForm", () => {
     await waitFor(() => expect(onSubmit).toHaveBeenCalled());
     expect(onSubmit.mock.calls[0][0].include_drawing_box).toBe(true);
   });
+
+  it("clears checked topics and custom drafts after submit", async () => {
+    mockPresets();
+    const onSubmit = vi.fn();
+    render(<RequestForm onSubmit={onSubmit} />);
+    await waitFor(() =>
+      expect(screen.getByText(/Sports/)).toBeInTheDocument(),
+    );
+
+    await userEvent.type(screen.getByLabelText(/student.*name/i), "Maya");
+    await userEvent.click(screen.getByRole("button", { name: /Sports/ }));
+    const soccer = screen.getByRole("checkbox", { name: "Soccer" });
+    await userEvent.click(soccer);
+    expect(soccer).toBeChecked();
+
+    await userEvent.click(screen.getByRole("button", { name: /generate/i }));
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+
+    // After submit, Soccer should no longer be checked.
+    const soccerAfter = screen.getByRole("checkbox", { name: "Soccer" });
+    expect(soccerAfter).not.toBeChecked();
+  });
+
+  it("renders a custom topic as a toggleable checkbox under its category", async () => {
+    mockPresets();
+    const onSubmit = vi.fn();
+    render(<RequestForm onSubmit={onSubmit} />);
+    await waitFor(() =>
+      expect(screen.getByText(/Sports/)).toBeInTheDocument(),
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: /Sports/ }));
+    await userEvent.type(
+      screen.getByLabelText(/Add custom.*Sports/i),
+      "Curling",
+    );
+    await userEvent.click(
+      screen.getByRole("button", { name: /add Sports topic/i }),
+    );
+
+    // The custom topic now appears as a checked checkbox.
+    const curling = screen.getByRole("checkbox", { name: "Curling" });
+    expect(curling).toBeChecked();
+
+    // It can be unchecked.
+    await userEvent.click(curling);
+    expect(curling).not.toBeChecked();
+  });
 });
