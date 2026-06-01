@@ -80,7 +80,7 @@ describe("StoryCard", () => {
     expect(screen.getByText(/couldn't confirm/i)).toBeInTheDocument();
   });
 
-  it("collapses the story body to a 5-line preview and re-expands via the chevron", async () => {
+  it("defaults to collapsed 5-line preview and expands via the chevron", async () => {
     const userEvent = (await import("@testing-library/user-event")).default;
     render(
       <StoryCard
@@ -104,23 +104,22 @@ describe("StoryCard", () => {
       />,
     );
 
+    // Body is in the DOM and clamped via the modifier class by default.
     const body = screen.getByText("Once upon a time.");
     expect(body).toBeInTheDocument();
-    expect(body).not.toHaveClass("story-text--collapsed");
+    expect(body).toHaveClass("story-text--collapsed");
 
-    // Default state is expanded; the button collapses.
-    const collapseBtn = screen.getByRole("button", { name: /collapse story/i });
-    await userEvent.click(collapseBtn);
-
-    // Body is still in the DOM (so the bundle / actions still work) but is
-    // visually clamped via the modifier class.
-    const bodyAfter = screen.getByText("Once upon a time.");
-    expect(bodyAfter).toHaveClass("story-text--collapsed");
-
-    // The chevron flips to expand.
-    const expandBtn = screen.getByRole("button", { name: /expand story/i });
+    // Click to expand.
+    const expandBtn = screen.getByRole("button", { name: /view more/i });
     await userEvent.click(expandBtn);
     expect(screen.getByText("Once upon a time.")).not.toHaveClass(
+      "story-text--collapsed",
+    );
+
+    // Click again to collapse.
+    const collapseBtn = screen.getByRole("button", { name: /view less/i });
+    await userEvent.click(collapseBtn);
+    expect(screen.getByText("Once upon a time.")).toHaveClass(
       "story-text--collapsed",
     );
   });

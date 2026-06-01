@@ -553,14 +553,35 @@ section .bundle-actions {
   gap: 10px;
 }
 
+.story-body {
+  max-width: 65ch;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg);
+  overflow: hidden;
+}
+
+.story-body > .story-text {
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  max-width: none;
+}
+
 .card-chevron {
+  display: block;
+  width: 100%;
   background: transparent;
   border: none;
+  border-top: 1px solid var(--border);
   color: var(--ink-muted);
-  font-size: 1.05rem;
+  font-family: var(--sans);
+  font-size: 0.95rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
   line-height: 1;
-  padding: 2px 8px;
-  border-radius: var(--radius-sm);
+  padding: 12px 0;
+  border-radius: 0;
   cursor: pointer;
 }
 

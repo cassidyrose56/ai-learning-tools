@@ -52,7 +52,7 @@ async function downloadDocx(state: StoryCardState, req: StoryRequestContext) {
 }
 
 export default function StoryCard({ state, request, onPreviewPdf, onDismiss }: Props) {
-  const [expanded, setExpanded] = useState(true);
+  const [expanded, setExpanded] = useState(false);
   return (
     <article className="story-card">
       <header>
@@ -64,17 +64,6 @@ export default function StoryCard({ state, request, onPreviewPdf, onDismiss }: P
             <span className="badge warning">
               Couldn't confirm reading level
             </span>
-          )}
-          {state.status === "done" && (
-            <button
-              type="button"
-              className="card-chevron"
-              aria-label={expanded ? "Collapse story" : "Expand story"}
-              aria-expanded={expanded}
-              onClick={() => setExpanded((v) => !v)}
-            >
-              {expanded ? "▾" : "▸"}
-            </button>
           )}
           <button
             type="button"
@@ -105,15 +94,25 @@ export default function StoryCard({ state, request, onPreviewPdf, onDismiss }: P
       {state.status === "error" && <p className="error">{state.error}</p>}
       {state.status === "done" && (
         <>
-          <div
-            className={
-              expanded
-                ? "story-text"
-                : "story-text story-text--collapsed"
-            }
-            style={{ whiteSpace: "pre-wrap" }}
-          >
-            {state.text}
+          <div className="story-body">
+            <div
+              className={
+                expanded
+                  ? "story-text"
+                  : "story-text story-text--collapsed"
+              }
+              style={{ whiteSpace: "pre-wrap" }}
+            >
+              {state.text}
+            </div>
+            <button
+              type="button"
+              className="card-chevron"
+              aria-expanded={expanded}
+              onClick={() => setExpanded((v) => !v)}
+            >
+              {expanded ? "View Less" : "View More"}
+            </button>
           </div>
           <div className="actions">
             <button onClick={() => downloadDocx(state, request)}>

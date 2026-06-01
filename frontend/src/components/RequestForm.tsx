@@ -17,7 +17,7 @@ const LEVELS: { value: ReadingLevel; label: string }[] = [
 export default function RequestForm({ onSubmit }: Props) {
   const [presets, setPresets] = useState<Presets>({});
   const [childName, setChildName] = useState("");
-  const [readingLevel, setReadingLevel] = useState<ReadingLevel>("3");
+  const [readingLevel, setReadingLevel] = useState<ReadingLevel>("K");
   const [genre, setGenre] = useState<Genre>("fiction");
   const [pages, setPages] = useState<number | "">(2);
   const [includeBox, setIncludeBox] = useState(false);
@@ -79,7 +79,13 @@ export default function RequestForm({ onSubmit }: Props) {
       include_drawing_box: includeBox,
       topics: Array.from(selected),
     });
+    setChildName("");
+    setReadingLevel("K");
+    setGenre("fiction");
+    setPages(2);
+    setIncludeBox(false);
     setSelected(new Set());
+    setExpanded(new Set());
     setCustomDrafts({});
     setCustomTopics({});
     setErrors({});

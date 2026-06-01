@@ -81,7 +81,7 @@ describe("RequestForm", () => {
     expect(onSubmit.mock.calls[0][0].include_drawing_box).toBe(true);
   });
 
-  it("clears checked topics and custom drafts after submit", async () => {
+  it("clears the entire form after submit", async () => {
     mockPresets();
     const onSubmit = vi.fn();
     render(<RequestForm onSubmit={onSubmit} />);
@@ -89,18 +89,30 @@ describe("RequestForm", () => {
       expect(screen.getByText(/Sports/)).toBeInTheDocument(),
     );
 
-    await userEvent.type(screen.getByLabelText(/student.*name/i), "Maya");
+    const nameInput = screen.getByLabelText(/student.*name/i) as HTMLInputElement;
+    const pagesInput = screen.getByLabelText(/pages/i) as HTMLInputElement;
+    const drawingBox = screen.getByRole("checkbox", { name: /drawing box/i }) as HTMLInputElement;
+    const levelSelect = screen.getByLabelText(/reading level/i) as HTMLSelectElement;
+
+    await userEvent.type(nameInput, "Maya");
+    await userEvent.clear(pagesInput);
+    await userEvent.type(pagesInput, "4");
+    await userEvent.click(drawingBox);
+    await userEvent.selectOptions(levelSelect, "3");
     await userEvent.click(screen.getByRole("button", { name: /Sports/ }));
-    const soccer = screen.getByRole("checkbox", { name: "Soccer" });
-    await userEvent.click(soccer);
-    expect(soccer).toBeChecked();
+    await userEvent.click(screen.getByRole("checkbox", { name: "Soccer" }));
 
     await userEvent.click(screen.getByRole("button", { name: /generate/i }));
     await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
 
-    // After submit, Soccer should no longer be checked.
-    const soccerAfter = screen.getByRole("checkbox", { name: "Soccer" });
-    expect(soccerAfter).not.toBeChecked();
+    // After submit, every field is back to its default and the categories collapse.
+    expect(nameInput.value).toBe("");
+    expect(pagesInput.value).toBe("2");
+    expect(drawingBox).not.toBeChecked();
+    expect(levelSelect.value).toBe("K");
+    expect(
+      screen.queryByRole("checkbox", { name: "Soccer" }),
+    ).not.toBeInTheDocument();
   });
 
   it("renders a custom topic as a toggleable checkbox under its category", async () => {
