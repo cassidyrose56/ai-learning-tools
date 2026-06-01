@@ -163,18 +163,6 @@ export default function RequestForm({ onSubmit }: Props) {
         </p>
       )}
 
-      <label>
-        <input
-          type="checkbox"
-          checked={includeBox}
-          onChange={(e) => setIncludeBox(e.target.checked)}
-        />
-        Add a drawing box for the student to draw a picture
-      </label>
-      <p className="helper">
-        The drawing box appears only in PDF downloads. Word downloads are plain text.
-      </p>
-
       <div
         className="categories"
         aria-describedby={errors.topics ? "err-topics" : undefined}
@@ -227,6 +215,22 @@ export default function RequestForm({ onSubmit }: Props) {
           {errors.topics}
         </p>
       )}
+
+      <div className="drawing-box-option">
+        <label className="drawing-box-toggle">
+          <input
+            type="checkbox"
+            checked={includeBox}
+            onChange={(e) => setIncludeBox(e.target.checked)}
+          />
+          <span className="drawing-box-text">
+            <strong>Add a drawing box</strong>
+            <span className="drawing-box-help">
+              Adds a blank box at the top of the page for the student to draw a picture of the story. PDF downloads only; Word downloads are plain text.
+            </span>
+          </span>
+        </label>
+      </div>
 
       {Object.keys(errors).length > 0 && (
         <div role="alert" aria-live="polite" className="form-errors">

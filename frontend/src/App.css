@@ -540,6 +540,47 @@ section .bundle-actions {
   border-color: var(--accent-strong);
 }
 
+.drawing-box-option {
+  background: var(--surface-warm);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  padding: 14px 18px;
+  margin: 14px 0;
+}
+
+.drawing-box-toggle {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  cursor: pointer;
+}
+
+.drawing-box-toggle > input[type="checkbox"] {
+  margin: 3px 0 0;
+  width: 20px;
+  height: 20px;
+  flex: 0 0 auto;
+  accent-color: var(--accent-strong);
+}
+
+.drawing-box-text {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.drawing-box-text > strong {
+  font-size: 1.05rem;
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.drawing-box-help {
+  font-size: 0.85rem;
+  color: var(--ink-muted);
+  line-height: 1.45;
+}
+
 /* ============================================================
    v2 additions
    ============================================================ */
