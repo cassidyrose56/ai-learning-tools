@@ -1,3 +1,4 @@
+import { StrictMode } from "react";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
@@ -33,10 +34,12 @@ vi.mock("./lib/sse", () => {
 const PRESETS = { Sports: ["Soccer"], Animals: ["Dinosaurs"] };
 
 function mockPresets() {
-  vi.spyOn(globalThis, "fetch").mockResolvedValue(
-    new Response(JSON.stringify(PRESETS), {
-      headers: { "content-type": "application/json" },
-    }),
+  vi.spyOn(globalThis, "fetch").mockImplementation(() =>
+    Promise.resolve(
+      new Response(JSON.stringify(PRESETS), {
+        headers: { "content-type": "application/json" },
+      }),
+    ),
   );
 }
 
@@ -119,5 +122,23 @@ describe("App consolidated story list", () => {
     expect(screen.getByRole("heading", { name: /For Liam/i })).toBeInTheDocument();
     // The unused removeButtons reference is intentional - kept for clarity.
     void removeButtons;
+  });
+
+  it("does not drop SSE events when mounted inside StrictMode", async () => {
+    mockPresets();
+    render(
+      <StrictMode>
+        <App />
+      </StrictMode>,
+    );
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: /^Sports$/ })).toBeInTheDocument(),
+    );
+
+    await submitFor("Maya", "Soccer");
+
+    await waitFor(() =>
+      expect(screen.getByRole("heading", { name: /For Maya/i })).toBeInTheDocument(),
+    );
   });
 });

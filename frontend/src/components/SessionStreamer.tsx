@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import type { GenerateRequest, SseEvent } from "../types";
 import type { StoryCardState } from "./StoryCard";
 
@@ -23,11 +23,17 @@ export default function SessionStreamer({
   onUpsert,
   onPatch,
 }: Props) {
+  // Async generators can only be consumed once. Under React.StrictMode the
+  // effect mounts, unmounts, then remounts in development; a naive `for await`
+  // in the effect body would race two consumers on the same generator and
+  // half the SSE events would land in the discarded coroutine.
+  const startedRef = useRef(false);
+
   useEffect(() => {
-    let cancelled = false;
+    if (startedRef.current) return;
+    startedRef.current = true;
     (async () => {
       for await (const ev of session.events) {
-        if (cancelled) return;
         if (ev.type === "started") {
           onUpsert(session.id, session.request, {
             story_id: ev.story_id,
@@ -53,9 +59,6 @@ export default function SessionStreamer({
         }
       }
     })();
-    return () => {
-      cancelled = true;
-    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session]);
 
