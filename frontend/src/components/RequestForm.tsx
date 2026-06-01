@@ -19,7 +19,7 @@ export default function RequestForm({ onSubmit }: Props) {
   const [childName, setChildName] = useState("");
   const [readingLevel, setReadingLevel] = useState<ReadingLevel>("3");
   const [genre, setGenre] = useState<Genre>("fiction");
-  const [pages, setPages] = useState(2);
+  const [pages, setPages] = useState<number | "">(2);
   const [includeBox, setIncludeBox] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
@@ -68,14 +68,14 @@ export default function RequestForm({ onSubmit }: Props) {
     const next: Record<string, string> = {};
     if (!childName.trim()) next.childName = "Student name is required.";
     if (selected.size === 0) next.topics = "Pick at least one topic.";
-    if (pages < 1) next.pages = "Pages must be at least 1.";
+    if (pages === "" || pages < 1) next.pages = "Pages must be at least 1.";
     setErrors(next);
     if (Object.keys(next).length) return;
     onSubmit({
       child_name: childName.trim(),
       reading_level: readingLevel,
       genre,
-      pages,
+      pages: pages as number,
       include_drawing_box: includeBox,
       topics: Array.from(selected),
     });
@@ -133,15 +133,22 @@ export default function RequestForm({ onSubmit }: Props) {
         ))}
       </fieldset>
 
-      <label>
+      <label htmlFor="pages-input">
         Pages
         <input
+          id="pages-input"
           type="number"
           min={1}
           aria-invalid={errors.pages ? true : undefined}
           aria-describedby={errors.pages ? "err-pages" : undefined}
           value={pages}
-          onChange={(e) => setPages(parseInt(e.target.value, 10) || 0)}
+          onChange={(e) => {
+            const v = e.target.value;
+            if (v === "") return setPages("");
+            const n = parseInt(v, 10);
+            if (Number.isNaN(n)) return;
+            setPages(n);
+          }}
         />
       </label>
       {errors.pages && (

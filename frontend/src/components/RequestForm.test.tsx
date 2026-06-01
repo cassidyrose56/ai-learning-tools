@@ -128,4 +128,51 @@ describe("RequestForm", () => {
     await userEvent.click(curling);
     expect(curling).not.toBeChecked();
   });
+
+  it("pages input allows empty intermediate state and retyped digits do not pad", async () => {
+    mockPresets();
+    const onSubmit = vi.fn();
+    render(<RequestForm onSubmit={onSubmit} />);
+    await waitFor(() =>
+      expect(screen.getByText(/Sports/)).toBeInTheDocument(),
+    );
+
+    const pagesInput = screen.getByLabelText(/pages/i) as HTMLInputElement;
+    expect(pagesInput.value).toBe("2");
+
+    // Backspace the default; input should be empty (not "0").
+    await userEvent.clear(pagesInput);
+    expect(pagesInput.value).toBe("");
+
+    // Type a single digit; should not show "0" prefix.
+    await userEvent.type(pagesInput, "5");
+    expect(pagesInput.value).toBe("5");
+
+    // Fill the rest of the form and submit; payload carries 5.
+    await userEvent.type(screen.getByLabelText(/student.*name/i), "Maya");
+    await userEvent.click(screen.getByRole("button", { name: /Sports/ }));
+    await userEvent.click(screen.getByRole("checkbox", { name: "Soccer" }));
+    await userEvent.click(screen.getByRole("button", { name: /generate/i }));
+
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+    expect(onSubmit.mock.calls[0][0].pages).toBe(5);
+  });
+
+  it("pages input rejects submission when empty", async () => {
+    mockPresets();
+    const onSubmit = vi.fn();
+    render(<RequestForm onSubmit={onSubmit} />);
+    await waitFor(() =>
+      expect(screen.getByText(/Sports/)).toBeInTheDocument(),
+    );
+
+    await userEvent.type(screen.getByLabelText(/student.*name/i), "Maya");
+    await userEvent.click(screen.getByRole("button", { name: /Sports/ }));
+    await userEvent.click(screen.getByRole("checkbox", { name: "Soccer" }));
+    await userEvent.clear(screen.getByLabelText(/pages/i));
+
+    await userEvent.click(screen.getByRole("button", { name: /generate/i }));
+    expect(onSubmit).not.toHaveBeenCalled();
+    expect(screen.getByText(/pages must be at least 1/i)).toBeInTheDocument();
+  });
 });
