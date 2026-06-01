@@ -331,9 +331,9 @@ def test_pdf_has_no_title(monkeypatch):
     assert not any("Maya" in s for s in drawn)
 
 
-def test_pdf_paragraph_indent(monkeypatch):
+def test_pdf_paragraphs_are_not_indented(monkeypatch):
     from reportlab.pdfgen import canvas as canvas_mod
-    from app.export import _MARGIN, _INDENT
+    from app.export import _MARGIN
 
     calls: list[tuple[float, float, str]] = []
     real_draw = canvas_mod.Canvas.drawString
@@ -349,18 +349,9 @@ def test_pdf_paragraph_indent(monkeypatch):
     text = f"{para_a}\n\n{para_b}"
     render_pdf(make_story(reading_level="3", pages=1, text=text))
 
-    # First line of each paragraph at x = _MARGIN + _INDENT.
-    # Locate by the leading token.
-    alpha_first = next(c for c in calls if "Alpha" in c[2])
-    bravo_first = next(c for c in calls if "Bravo" in c[2])
-    assert abs(alpha_first[0] - (_MARGIN + _INDENT)) < 0.5
-    assert abs(bravo_first[0] - (_MARGIN + _INDENT)) < 0.5
-
-    # Subsequent lines (if Alpha wraps) start at x = _MARGIN.
-    alpha_lines = [c for c in calls if "Alpha" in c[2]]
-    if len(alpha_lines) > 1:
-        for c in alpha_lines[1:]:
-            assert abs(c[0] - _MARGIN) < 0.5
+    assert calls, "expected drawString calls"
+    for x, _y, _t in calls:
+        assert abs(x - _MARGIN) < 0.5, (x, _MARGIN)
 
 
 def test_pdf_fills_page_by_scaling_leading(monkeypatch):

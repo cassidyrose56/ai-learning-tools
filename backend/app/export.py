@@ -118,7 +118,6 @@ def split_into_pages(text: str, n: int) -> list[str]:
 _MARGIN = 0.75 * inch
 _BOX_FRACTION = 0.45  # drawing box occupies top 45% of page
 _BOX_GAP_LEADING = 1.5
-_INDENT = 18.0  # first-line paragraph indent in points (~0.25 inch)
 _PARA_GAP_FRAC = 0.7  # paragraph gap as a fraction of leading
 _FILL_MAX_SCALE = 2.0  # cap leading stretch to 2x baseline
 
@@ -145,14 +144,14 @@ def render_pdf(story: StoryInput) -> bytes:
             text_top = box_bottom - base_leading * _BOX_GAP_LEADING
 
         c.setFont("Helvetica", font_size)
-        lines_per_para = _layout_chunk(chunk, text_width, font_size, _INDENT)
+        lines_per_para = _layout_chunk(chunk, text_width, font_size)
 
         available_height = text_top - _MARGIN
         scale = _compute_fill_scale(lines_per_para, available_height, base_leading)
         leading = base_leading * scale
         para_gap = base_leading * _PARA_GAP_FRAC * scale
 
-        _draw_chunk(c, lines_per_para, text_x, text_top, leading, para_gap, _INDENT)
+        _draw_chunk(c, lines_per_para, text_x, text_top, leading, para_gap)
 
         if idx < len(chunks) - 1:
             c.showPage()
@@ -163,32 +162,24 @@ def render_pdf(story: StoryInput) -> bytes:
 
 
 def _layout_paragraph(
-    text: str, max_width: float, font_size: float, indent: float
+    text: str, max_width: float, font_size: float
 ) -> list[str]:
-    """Wrap a single paragraph into lines. The first line has `indent`
-    fewer pixels available; subsequent lines use the full max_width.
-    Indent is applied at draw time (this function returns the line
-    strings only).
-    """
     from reportlab.pdfbase.pdfmetrics import stringWidth
 
     font_name = "Helvetica"
     words = text.split()
     lines: list[str] = []
     current: list[str] = []
-    is_first_line = True
 
     def width_of(buf: list[str]) -> float:
         return stringWidth(" ".join(buf), font_name, font_size)
 
     for w in words:
         current.append(w)
-        line_max = (max_width - indent) if is_first_line else max_width
-        if width_of(current) > line_max:
+        if width_of(current) > max_width:
             current.pop()
             if current:
                 lines.append(" ".join(current))
-                is_first_line = False
             current = [w]
     if current:
         lines.append(" ".join(current))
@@ -196,10 +187,10 @@ def _layout_paragraph(
 
 
 def _layout_chunk(
-    text: str, max_width: float, font_size: float, indent: float
+    text: str, max_width: float, font_size: float
 ) -> list[list[str]]:
     paragraphs = [p for p in text.split("\n\n") if p.strip()]
-    return [_layout_paragraph(p, max_width, font_size, indent) for p in paragraphs]
+    return [_layout_paragraph(p, max_width, font_size) for p in paragraphs]
 
 
 def _compute_fill_scale(
@@ -228,13 +219,11 @@ def _draw_chunk(
     y_top: float,
     leading: float,
     para_gap: float,
-    indent: float,
 ) -> None:
     cursor_y = y_top
     for p_idx, lines in enumerate(lines_per_para):
-        for l_idx, line in enumerate(lines):
-            line_x = x + indent if l_idx == 0 else x
-            c.drawString(line_x, cursor_y, line)
+        for line in lines:
+            c.drawString(x, cursor_y, line)
             cursor_y -= leading
         if p_idx < len(lines_per_para) - 1:
             cursor_y -= para_gap
