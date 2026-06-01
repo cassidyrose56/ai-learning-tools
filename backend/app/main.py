@@ -1,8 +1,9 @@
 import json
-from fastapi import FastAPI, Response
+from fastapi import FastAPI, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 
+from app import preview_cache
 from app.evaluator import evaluate_grade_level
 from app.export import StoryInput, render_bundle, render_docx, render_pdf, safe_filename
 from app.generator import generate_story
@@ -82,6 +83,35 @@ async def export(request: ExportRequest) -> Response:
         content=blob,
         media_type=media,
         headers={"content-disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@app.post("/api/export/preview")
+async def export_preview_prepare(request: ExportRequest) -> dict[str, str]:
+    story = StoryInput(
+        child_name=request.child_name,
+        topic=request.topic,
+        genre=request.genre,
+        text=request.text,
+        reading_level=request.reading_level,
+        pages=request.pages,
+        include_drawing_box=request.include_drawing_box,
+    )
+    blob = render_pdf(story)
+    filename = f"{safe_filename(request.child_name, request.topic)}.pdf"
+    token = preview_cache.put(blob)
+    return {"token": token, "filename": filename}
+
+
+@app.get("/api/export/preview/{filename}")
+async def export_preview_serve(filename: str, token: str) -> Response:
+    blob = preview_cache.get(token)
+    if blob is None:
+        raise HTTPException(status_code=404, detail="preview expired")
+    return Response(
+        content=blob,
+        media_type="application/pdf",
+        headers={"content-disposition": f'inline; filename="{filename}"'},
     )
 
 

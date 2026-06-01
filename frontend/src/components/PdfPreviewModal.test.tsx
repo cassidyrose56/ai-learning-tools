@@ -20,21 +20,22 @@ const STATE = {
   attempts: 1,
 };
 
-function mockExportReturnsPdfBlob() {
+function mockPreparePreview() {
   return vi.spyOn(globalThis, "fetch").mockResolvedValue(
-    new Response("%PDF"),
+    new Response(
+      JSON.stringify({ token: "tok-123", filename: "Maya_Soccer.pdf" }),
+      { headers: { "content-type": "application/json" } },
+    ),
   );
 }
 
 beforeEach(() => {
   vi.restoreAllMocks();
-  global.URL.createObjectURL = vi.fn(() => "blob:mock");
-  global.URL.revokeObjectURL = vi.fn();
 });
 
 describe("PdfPreviewModal", () => {
-  it("renders header with title and shows embed after fetch", async () => {
-    mockExportReturnsPdfBlob();
+  it("renders header and shows the embed pointed at the named preview URL", async () => {
+    mockPreparePreview();
     render(
       <PdfPreviewModal
         open
@@ -48,12 +49,28 @@ describe("PdfPreviewModal", () => {
     ).toBeInTheDocument();
     await waitFor(() => {
       const embed = document.querySelector("embed");
-      expect(embed?.getAttribute("src")).toBe("blob:mock");
+      expect(embed?.getAttribute("src")).toBe(
+        "/api/export/preview/Maya_Soccer.pdf?token=tok-123",
+      );
     });
   });
 
-  it("Cancel closes and revokes the blob URL", async () => {
-    mockExportReturnsPdfBlob();
+  it("Download anchor uses the same named URL with a download attribute", async () => {
+    mockPreparePreview();
+    render(
+      <PdfPreviewModal open story={STATE} request={REQUEST} onClose={vi.fn()} />,
+    );
+    const download = (await screen.findByRole("link", {
+      name: /download/i,
+    })) as HTMLAnchorElement;
+    expect(download.getAttribute("href")).toBe(
+      "/api/export/preview/Maya_Soccer.pdf?token=tok-123",
+    );
+    expect(download.getAttribute("download")).toBe("Maya_Soccer.pdf");
+  });
+
+  it("Cancel closes the modal", async () => {
+    mockPreparePreview();
     const onClose = vi.fn();
     render(
       <PdfPreviewModal open story={STATE} request={REQUEST} onClose={onClose} />,
@@ -61,11 +78,10 @@ describe("PdfPreviewModal", () => {
     await screen.findByText(/For Maya · Soccer/);
     await userEvent.click(screen.getByRole("button", { name: /cancel/i }));
     expect(onClose).toHaveBeenCalled();
-    expect(URL.revokeObjectURL).toHaveBeenCalledWith("blob:mock");
   });
 
   it("Esc closes the modal", async () => {
-    mockExportReturnsPdfBlob();
+    mockPreparePreview();
     const onClose = vi.fn();
     render(
       <PdfPreviewModal open story={STATE} request={REQUEST} onClose={onClose} />,
@@ -75,18 +91,8 @@ describe("PdfPreviewModal", () => {
     await waitFor(() => expect(onClose).toHaveBeenCalled());
   });
 
-  it("Download saves the same blob without a second fetch", async () => {
-    const fetchSpy = mockExportReturnsPdfBlob();
-    render(
-      <PdfPreviewModal open story={STATE} request={REQUEST} onClose={vi.fn()} />,
-    );
-    await screen.findByText(/For Maya · Soccer/);
-    await userEvent.click(screen.getByRole("button", { name: /download/i }));
-    expect(fetchSpy).toHaveBeenCalledTimes(1);
-  });
-
   it("shows fallback when embed has zero height", async () => {
-    mockExportReturnsPdfBlob();
+    mockPreparePreview();
     Object.defineProperty(HTMLElement.prototype, "clientHeight", {
       configurable: true,
       get: () => 0,

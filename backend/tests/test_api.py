@@ -122,6 +122,44 @@ def test_export_pdf_returns_pdf_bytes(client):
     assert "Maya_Soccer.pdf" in r.headers["content-disposition"]
 
 
+def test_preview_returns_token_and_filename_then_serves_pdf(client):
+    from app import preview_cache
+
+    preview_cache.clear()
+    body = {
+        "format": "pdf",
+        "child_name": "Maya",
+        "topic": "Soccer",
+        "genre": "fiction",
+        "text": "Once. Twice.",
+        "reading_level": "3",
+        "pages": 1,
+        "include_drawing_box": False,
+    }
+    r = client.post("/api/export/preview", json=body)
+    assert r.status_code == 200
+    payload = r.json()
+    assert payload["filename"] == "Maya_Soccer.pdf"
+    token = payload["token"]
+    assert token
+
+    g = client.get(f"/api/export/preview/{payload['filename']}", params={"token": token})
+    assert g.status_code == 200
+    assert g.headers["content-type"] == "application/pdf"
+    assert g.content[:4] == b"%PDF"
+    disposition = g.headers["content-disposition"]
+    assert "inline" in disposition
+    assert 'filename="Maya_Soccer.pdf"' in disposition
+
+
+def test_preview_unknown_token_returns_404(client):
+    from app import preview_cache
+
+    preview_cache.clear()
+    g = client.get("/api/export/preview/whatever.pdf", params={"token": "nope"})
+    assert g.status_code == 404
+
+
 def test_export_bundle_returns_zip(client):
     body = {
         "format": "docx",

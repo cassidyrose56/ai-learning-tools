@@ -17,14 +17,18 @@ interface Props {
   onClose: () => void;
 }
 
+interface PreviewHandle {
+  url: string;
+  filename: string;
+}
+
 export default function PdfPreviewModal({
   open,
   story,
   request,
   onClose,
 }: Props) {
-  const [blobUrl, setBlobUrl] = useState<string | null>(null);
-  const [blob, setBlob] = useState<Blob | null>(null);
+  const [preview, setPreview] = useState<PreviewHandle | null>(null);
   const [embedFailed, setEmbedFailed] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const embedRef = useRef<HTMLEmbedElement | null>(null);
@@ -32,7 +36,7 @@ export default function PdfPreviewModal({
   useEffect(() => {
     if (!open) return;
     let active = true;
-    fetch("/api/export", {
+    fetch("/api/export/preview", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
@@ -48,12 +52,12 @@ export default function PdfPreviewModal({
     })
       .then(async (r) => {
         if (!r.ok) throw new Error("export failed");
-        return r.blob();
+        return (await r.json()) as { token: string; filename: string };
       })
-      .then((b) => {
+      .then(({ token, filename }) => {
         if (!active) return;
-        setBlob(b);
-        setBlobUrl(URL.createObjectURL(b));
+        const url = `/api/export/preview/${encodeURIComponent(filename)}?token=${encodeURIComponent(token)}`;
+        setPreview({ url, filename });
       })
       .catch((e) => active && setError(e.message));
     return () => {
@@ -68,37 +72,22 @@ export default function PdfPreviewModal({
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [open, blobUrl]);
+  }, [open]);
 
   useEffect(() => {
-    if (!blobUrl || !embedRef.current) return;
+    if (!preview || !embedRef.current) return;
     const t = setTimeout(() => {
       if (embedRef.current && embedRef.current.clientHeight === 0) {
         setEmbedFailed(true);
       }
     }, 100);
     return () => clearTimeout(t);
-  }, [blobUrl]);
+  }, [preview]);
 
   function close() {
-    if (blobUrl) URL.revokeObjectURL(blobUrl);
-    setBlobUrl(null);
-    setBlob(null);
+    setPreview(null);
     setEmbedFailed(false);
     onClose();
-  }
-
-  function download() {
-    if (!blob) return;
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `${request.child_name}_${story.topic}.pdf`.replace(
-      /\s+/g,
-      "_",
-    );
-    a.click();
-    URL.revokeObjectURL(url);
   }
 
   if (!open) return null;
@@ -122,25 +111,34 @@ export default function PdfPreviewModal({
         </header>
         <div className="modal-body">
           {error && <p className="error">Couldn't generate PDF. Try again.</p>}
-          {!error && blobUrl && !embedFailed && (
+          {!error && preview && !embedFailed && (
             <embed
               ref={embedRef}
               type="application/pdf"
-              src={blobUrl}
+              src={preview.url}
               width="100%"
               height="100%"
             />
           )}
-          {!error && blobUrl && embedFailed && (
+          {!error && preview && embedFailed && (
             <p>Your browser can't preview PDFs inline. Download to view.</p>
           )}
-          {!error && !blobUrl && <p>Loading preview…</p>}
+          {!error && !preview && <p>Loading preview…</p>}
         </div>
         <footer>
           <button onClick={close}>Cancel</button>
-          <button autoFocus onClick={download} disabled={!blob}>
-            Download
-          </button>
+          {preview ? (
+            <a
+              className="modal-download"
+              href={preview.url}
+              download={preview.filename}
+              autoFocus
+            >
+              Download
+            </a>
+          ) : (
+            <button disabled>Download</button>
+          )}
         </footer>
       </div>
     </div>
