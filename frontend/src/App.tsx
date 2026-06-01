@@ -7,14 +7,31 @@ import type { GenerateRequest, SseEvent } from "./types";
 import type { StoryCardState } from "./components/StoryCard";
 import "./App.css";
 
+interface Session {
+  id: string;
+  request: GenerateRequest;
+  events: AsyncGenerator<SseEvent>;
+}
+
 export default function App() {
-  const [request, setRequest] = useState<GenerateRequest | null>(null);
-  const [events, setEvents] = useState<AsyncGenerator<SseEvent> | null>(null);
-  const [previewStory, setPreviewStory] = useState<StoryCardState | null>(null);
+  const [sessions, setSessions] = useState<Session[]>([]);
+  const [previewStory, setPreviewStory] = useState<{
+    story: StoryCardState;
+    request: GenerateRequest;
+  } | null>(null);
 
   function handleSubmit(req: GenerateRequest) {
-    setRequest(req);
-    setEvents(streamSse("/api/generate", req));
+    setSessions((prev) => [
+      {
+        id:
+          typeof crypto !== "undefined" && "randomUUID" in crypto
+            ? crypto.randomUUID()
+            : `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+        request: req,
+        events: streamSse("/api/generate", req),
+      },
+      ...prev,
+    ]);
   }
 
   return (
@@ -26,18 +43,23 @@ export default function App() {
         </p>
       </header>
       <RequestForm onSubmit={handleSubmit} />
-      {request && events && (
-        <StoryList
-          events={events}
-          request={request}
-          onPreviewPdf={(s) => setPreviewStory(s)}
-        />
-      )}
-      {previewStory && request && (
+      {sessions.map((s) => (
+        <section key={s.id} className="kid-block">
+          <h2>Stories for {s.request.child_name}</h2>
+          <StoryList
+            events={s.events}
+            request={s.request}
+            onPreviewPdf={(story) =>
+              setPreviewStory({ story, request: s.request })
+            }
+          />
+        </section>
+      ))}
+      {previewStory && (
         <PdfPreviewModal
           open
-          story={previewStory}
-          request={request}
+          story={previewStory.story}
+          request={previewStory.request}
           onClose={() => setPreviewStory(null)}
         />
       )}
