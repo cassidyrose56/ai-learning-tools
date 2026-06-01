@@ -148,28 +148,12 @@ def test_pdf_line_spacing_per_reading_level():
     }
 
 
-def test_title_uses_colon_not_em_dash(monkeypatch):
-    # DOCX: title paragraph contains "For Maya: \"Soccer\"" and no em-dash.
+def test_docx_title_uses_colon_not_em_dash():
     blob = render_docx(make_story(child_name="Maya", topic="Soccer"))
     doc = Document(io.BytesIO(blob))
     titles = [p.text for p in doc.paragraphs if p.text]
     assert any('For Maya: "Soccer"' in t for t in titles)
     assert not any("—" in t for t in titles)
-
-    # PDF: spy on drawString to inspect the rendered title.
-    from reportlab.pdfgen import canvas as canvas_mod
-
-    drawn: list[str] = []
-    real_draw = canvas_mod.Canvas.drawString
-
-    def spy_draw(self, x, y, text, *args, **kwargs):
-        drawn.append(text)
-        return real_draw(self, x, y, text, *args, **kwargs)
-
-    monkeypatch.setattr(canvas_mod.Canvas, "drawString", spy_draw)
-    render_pdf(make_story(child_name="Maya", topic="Soccer", pages=1))
-    assert any('For Maya: "Soccer"' in s for s in drawn)
-    assert not any("—" in s for s in drawn)
 
 
 def test_pdf_preserves_paragraph_breaks(monkeypatch):
@@ -195,8 +179,7 @@ def test_pdf_preserves_paragraph_breaks(monkeypatch):
 
     render_pdf(make_story(reading_level="3", pages=1, text=text))
 
-    # Drop the title call; everything after is body.
-    body = [(y, t) for (y, t) in calls if "For Maya" not in t]
+    body = calls
     ys = [y for (y, _) in body]
     # monotonically decreasing
     assert all(ys[i] > ys[i + 1] for i in range(len(ys) - 1)), ys
@@ -242,7 +225,7 @@ def test_pdf_drawing_box_leaves_leading_times_1_5_gap(monkeypatch):
     width, height = LETTER
     font_size = FONT_SIZES["3"]
     leading = font_size * LINE_SPACING["3"]
-    text_top_before_box = height - _MARGIN - (font_size * 2)
+    text_top_before_box = height - _MARGIN
     box_bottom = text_top_before_box - (height - 2 * _MARGIN) * _BOX_FRACTION
     expected_first_y = box_bottom - leading * 1.5
 
@@ -256,11 +239,12 @@ def test_pdf_drawing_box_leaves_leading_times_1_5_gap(monkeypatch):
     monkeypatch.setattr(canvas_mod.Canvas, "drawString", spy_draw)
     render_pdf(make_story(reading_level="3", pages=1, include_drawing_box=True, text="Body."))
 
-    # First non-title drawString is the body's first line.
-    body = [(y, t) for (y, t) in drawn if "For Maya" not in t]
+    body = drawn
     assert body, "expected at least one body line"
     first_y = body[0][0]
-    assert abs(first_y - expected_first_y) < 0.01, (first_y, expected_first_y)
+    # The first body line sits at or below (box_bottom - leading * 1.5).
+    # With fill-scaling it may sit lower; never above.
+    assert first_y <= expected_first_y + 0.01, (first_y, expected_first_y)
 
 
 def test_pdf_uses_per_grade_leading(monkeypatch):
@@ -329,3 +313,90 @@ def test_split_into_pages_preserves_closing_quotes():
         '"Did you ride all the way in that truck?"' in page
         and "Avi asked." in page
     )
+
+
+def test_pdf_has_no_title(monkeypatch):
+    from reportlab.pdfgen import canvas as canvas_mod
+
+    drawn: list[str] = []
+    real_draw = canvas_mod.Canvas.drawString
+
+    def spy_draw(self, x, y, text, *args, **kwargs):
+        drawn.append(text)
+        return real_draw(self, x, y, text, *args, **kwargs)
+
+    monkeypatch.setattr(canvas_mod.Canvas, "drawString", spy_draw)
+    render_pdf(make_story(child_name="Maya", topic="Soccer", pages=1))
+    assert not any(s.startswith("For ") for s in drawn)
+    assert not any("Maya" in s for s in drawn)
+
+
+def test_pdf_paragraph_indent(monkeypatch):
+    from reportlab.pdfgen import canvas as canvas_mod
+    from app.export import _MARGIN, _INDENT
+
+    calls: list[tuple[float, float, str]] = []
+    real_draw = canvas_mod.Canvas.drawString
+
+    def spy_draw(self, x, y, text, *args, **kwargs):
+        calls.append((x, y, text))
+        return real_draw(self, x, y, text, *args, **kwargs)
+
+    monkeypatch.setattr(canvas_mod.Canvas, "drawString", spy_draw)
+
+    para_a = "Alpha one. Alpha two. Alpha three. Alpha four."
+    para_b = "Bravo one. Bravo two. Bravo three. Bravo four."
+    text = f"{para_a}\n\n{para_b}"
+    render_pdf(make_story(reading_level="3", pages=1, text=text))
+
+    # First line of each paragraph at x = _MARGIN + _INDENT.
+    # Locate by the leading token.
+    alpha_first = next(c for c in calls if "Alpha" in c[2])
+    bravo_first = next(c for c in calls if "Bravo" in c[2])
+    assert abs(alpha_first[0] - (_MARGIN + _INDENT)) < 0.5
+    assert abs(bravo_first[0] - (_MARGIN + _INDENT)) < 0.5
+
+    # Subsequent lines (if Alpha wraps) start at x = _MARGIN.
+    alpha_lines = [c for c in calls if "Alpha" in c[2]]
+    if len(alpha_lines) > 1:
+        for c in alpha_lines[1:]:
+            assert abs(c[0] - _MARGIN) < 0.5
+
+
+def test_pdf_fills_page_by_scaling_leading(monkeypatch):
+    from reportlab.pdfgen import canvas as canvas_mod
+    from reportlab.lib.pagesizes import LETTER
+    from app.export import _MARGIN
+    from app.pedagogy import FONT_SIZES, LINE_SPACING
+
+    calls: list[tuple[float, str]] = []
+    real_draw = canvas_mod.Canvas.drawString
+
+    def spy_draw(self, x, y, text, *args, **kwargs):
+        calls.append((y, text))
+        return real_draw(self, x, y, text, *args, **kwargs)
+
+    monkeypatch.setattr(canvas_mod.Canvas, "drawString", spy_draw)
+
+    # Three short sentences across two paragraphs; should stretch.
+    text = "Alpha one. Alpha two.\n\nBravo one."
+    render_pdf(make_story(reading_level="3", pages=1, text=text))
+
+    ys = [y for (y, _t) in calls]
+    assert len(ys) >= 2, ys
+
+    base_leading = FONT_SIZES["3"] * LINE_SPACING["3"]
+    # Each consecutive y-delta inside a paragraph should be >= base_leading
+    # (the stretch is monotonic - we never shrink below baseline).
+    for a, b in zip(ys, ys[1:]):
+        delta = a - b
+        assert delta + 0.01 >= base_leading, (a, b, delta, base_leading)
+
+    # At least one delta should be strictly greater than base_leading -
+    # otherwise we did not stretch at all and the page is not filled.
+    deltas = [a - b for a, b in zip(ys, ys[1:])]
+    assert any(d > base_leading + 0.1 for d in deltas), deltas
+
+    # The first body line is near the top margin (no title above it).
+    width, height = LETTER
+    assert ys[0] > height - _MARGIN - base_leading * 3
