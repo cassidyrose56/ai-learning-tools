@@ -64,12 +64,12 @@ becomes the per-paragraph helper; the new orchestration code lives in
 
 | Level | Old | New |
 |-------|-----|-----|
-| K     | 1.6 | 1.7 |
-| 1     | 1.5 | 1.6 |
-| 2     | 1.4 | 1.5 |
-| 3     | 1.35| 1.45|
-| 4     | 1.3 | 1.4 |
-| 5     | 1.3 | 1.4 |
+| K     | 1.6 | 1.8 |
+| 1     | 1.5 | 1.7 |
+| 2     | 1.4 | 1.6 |
+| 3     | 1.35| 1.55|
+| 4     | 1.3 | 1.5 |
+| 5     | 1.3 | 1.5 |
 
 Existing `test_export.py` test that snapshots the table is updated in
 the same commit.
