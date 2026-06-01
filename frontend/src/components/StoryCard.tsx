@@ -1,3 +1,4 @@
+import { useState } from "react";
 import type { Genre, ReadingLevel } from "../types";
 
 export interface StoryCardState {
@@ -23,6 +24,7 @@ interface Props {
   state: StoryCardState;
   request: StoryRequestContext;
   onPreviewPdf: (state: StoryCardState) => void;
+  onDismiss: (story_id: string) => void;
 }
 
 async function downloadDocx(state: StoryCardState, req: StoryRequestContext) {
@@ -49,21 +51,41 @@ async function downloadDocx(state: StoryCardState, req: StoryRequestContext) {
   URL.revokeObjectURL(url);
 }
 
-export default function StoryCard({ state, request, onPreviewPdf }: Props) {
+export default function StoryCard({ state, request, onPreviewPdf, onDismiss }: Props) {
+  const [expanded, setExpanded] = useState(true);
   return (
     <article className="story-card">
       <header>
         <h3>
           For {request.child_name} · {state.topic}
         </h3>
-        {state.status === "done" && state.appropriate === false && (
-          <span className="badge warning">
-            Couldn't confirm reading level
-          </span>
-        )}
+        <div className="card-header-actions">
+          {state.status === "done" && state.appropriate === false && (
+            <span className="badge warning">
+              Couldn't confirm reading level
+            </span>
+          )}
+          {state.status === "done" && (
+            <button
+              type="button"
+              className="card-toggle"
+              onClick={() => setExpanded((v) => !v)}
+            >
+              {expanded ? "Hide story" : "Show story"}
+            </button>
+          )}
+          <button
+            type="button"
+            aria-label="Remove story"
+            className="card-close"
+            onClick={() => onDismiss(state.story_id)}
+          >
+            ×
+          </button>
+        </div>
       </header>
 
-      {state.status === "pending" && (
+      {expanded && state.status === "pending" && (
         <div
           className="story-skeleton"
           role="status"
@@ -79,7 +101,7 @@ export default function StoryCard({ state, request, onPreviewPdf }: Props) {
         </div>
       )}
       {state.status === "error" && <p className="error">{state.error}</p>}
-      {state.status === "done" && (
+      {expanded && state.status === "done" && (
         <>
           <div className="story-text" style={{ whiteSpace: "pre-wrap" }}>
             {state.text}

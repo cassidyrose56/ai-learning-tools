@@ -47,6 +47,16 @@ export default function StoryList({ events, request, onPreviewPdf }: Props) {
   const [stories, setStories] = useState<Record<string, StoryCardState>>({});
   const [order, setOrder] = useState<string[]>([]);
 
+  function dismiss(id: string) {
+    setOrder((o) => o.filter((x) => x !== id));
+    setStories((s) => {
+      if (!(id in s)) return s;
+      const rest = { ...s };
+      delete rest[id];
+      return rest;
+    });
+  }
+
   useEffect(() => {
     (async () => {
       for await (const ev of events) {
@@ -62,31 +72,37 @@ export default function StoryList({ events, request, onPreviewPdf }: Props) {
             },
           }));
         } else if (ev.type === "attempt") {
-          setStories((s) => ({
-            ...s,
-            [ev.story_id]: { ...s[ev.story_id], attempts: ev.attempt },
-          }));
+          setStories((s) => {
+            if (!s[ev.story_id]) return s;
+            return { ...s, [ev.story_id]: { ...s[ev.story_id], attempts: ev.attempt } };
+          });
         } else if (ev.type === "done") {
-          setStories((s) => ({
-            ...s,
-            [ev.story_id]: {
-              ...s[ev.story_id],
-              status: "done",
-              text: ev.text,
-              appropriate: ev.appropriate,
-              predicted_grade: ev.predicted_grade,
-              attempts: ev.attempts,
-            },
-          }));
+          setStories((s) => {
+            if (!s[ev.story_id]) return s;
+            return {
+              ...s,
+              [ev.story_id]: {
+                ...s[ev.story_id],
+                status: "done",
+                text: ev.text,
+                appropriate: ev.appropriate,
+                predicted_grade: ev.predicted_grade,
+                attempts: ev.attempts,
+              },
+            };
+          });
         } else if (ev.type === "error" && ev.story_id) {
-          setStories((s) => ({
-            ...s,
-            [ev.story_id!]: {
-              ...s[ev.story_id!],
-              status: "error",
-              error: ev.message,
-            },
-          }));
+          setStories((s) => {
+            if (!s[ev.story_id!]) return s;
+            return {
+              ...s,
+              [ev.story_id!]: {
+                ...s[ev.story_id!],
+                status: "error",
+                error: ev.message,
+              },
+            };
+          });
         }
       }
     })();
@@ -123,6 +139,7 @@ export default function StoryList({ events, request, onPreviewPdf }: Props) {
               state={state}
               request={request}
               onPreviewPdf={onPreviewPdf}
+              onDismiss={dismiss}
             />
           ))
         )}
