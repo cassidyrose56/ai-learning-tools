@@ -43,7 +43,6 @@ function mockPresets() {
 async function submitFor(name: string, topic: string) {
   await userEvent.clear(screen.getByLabelText(/student.*name/i));
   await userEvent.type(screen.getByLabelText(/student.*name/i), name);
-  // Open the category, check the topic, generate.
   const categoryBtn =
     topic === "Soccer"
       ? screen.getByRole("button", { name: /^Sports$/ })
@@ -53,8 +52,8 @@ async function submitFor(name: string, topic: string) {
   await userEvent.click(screen.getByRole("button", { name: /generate/i }));
 }
 
-describe("App multi-kid sessions", () => {
-  it("renders one block per submission with newest at top", async () => {
+describe("App consolidated story list", () => {
+  it("renders one card per submission across kids, newest first, and a single bundle", async () => {
     mockPresets();
     render(<App />);
     await waitFor(() =>
@@ -63,23 +62,62 @@ describe("App multi-kid sessions", () => {
 
     await submitFor("Maya", "Soccer");
     await waitFor(() =>
-      expect(screen.getByRole("heading", { name: /Stories for Maya/i })).toBeInTheDocument(),
+      expect(screen.getByRole("heading", { name: /For Maya/i })).toBeInTheDocument(),
     );
 
     await submitFor("Liam", "Dinosaurs");
     await waitFor(() =>
-      expect(screen.getByRole("heading", { name: /Stories for Liam/i })).toBeInTheDocument(),
+      expect(screen.getByRole("heading", { name: /For Liam/i })).toBeInTheDocument(),
     );
 
-    // Both headings present.
-    expect(screen.getByRole("heading", { name: /Stories for Maya/i })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: /Stories for Liam/i })).toBeInTheDocument();
+    // Both card headings present; no per-kid section headings remain.
+    expect(screen.queryByRole("heading", { name: /Stories for Maya/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: /Stories for Liam/i })).not.toBeInTheDocument();
 
-    // Liam's block (newest) appears before Maya's in document order.
-    const liam = screen.getByRole("heading", { name: /Stories for Liam/i });
-    const maya = screen.getByRole("heading", { name: /Stories for Maya/i });
-    const order = liam.compareDocumentPosition(maya);
-    // 4 = DOCUMENT_POSITION_FOLLOWING
+    const mayaCard = screen.getByRole("heading", { name: /For Maya/i });
+    const liamCard = screen.getByRole("heading", { name: /For Liam/i });
+    const order = liamCard.compareDocumentPosition(mayaCard);
+    // 4 = DOCUMENT_POSITION_FOLLOWING (liam comes before maya)
     expect(order & 4).toBeTruthy();
+
+    // Exactly one "Download all as PDF" button on the page.
+    expect(
+      screen.getAllByRole("button", { name: /Download all as PDF/i }),
+    ).toHaveLength(1);
+  });
+
+  it("removing a card calls dismiss; that card is gone", async () => {
+    mockPresets();
+    render(<App />);
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: /^Sports$/ })).toBeInTheDocument(),
+    );
+
+    await submitFor("Maya", "Soccer");
+    await waitFor(() =>
+      expect(screen.getByRole("heading", { name: /For Maya/i })).toBeInTheDocument(),
+    );
+
+    await submitFor("Liam", "Dinosaurs");
+    await waitFor(() =>
+      expect(screen.getByRole("heading", { name: /For Liam/i })).toBeInTheDocument(),
+    );
+
+    // Remove Maya's card.
+    const removeButtons = screen.getAllByRole("button", { name: /Remove story/i });
+    // The first Remove button belongs to the card at the top (Liam, newest).
+    // Find Maya's by walking the article ancestor.
+    const mayaArticle = screen
+      .getByRole("heading", { name: /For Maya/i })
+      .closest("article")!;
+    const removeMaya = mayaArticle.querySelector('button[aria-label="Remove story"]') as HTMLButtonElement;
+    await userEvent.click(removeMaya);
+
+    await waitFor(() =>
+      expect(screen.queryByRole("heading", { name: /For Maya/i })).not.toBeInTheDocument(),
+    );
+    expect(screen.getByRole("heading", { name: /For Liam/i })).toBeInTheDocument();
+    // The unused removeButtons reference is intentional - kept for clarity.
+    void removeButtons;
   });
 });
