@@ -68,10 +68,12 @@ export default function StoryCard({ state, request, onPreviewPdf, onDismiss }: P
           {state.status === "done" && (
             <button
               type="button"
-              className="card-toggle"
+              className="card-chevron"
+              aria-label={expanded ? "Collapse story" : "Expand story"}
+              aria-expanded={expanded}
               onClick={() => setExpanded((v) => !v)}
             >
-              {expanded ? "Hide story" : "Show story"}
+              {expanded ? "▾" : "▸"}
             </button>
           )}
           <button
@@ -85,7 +87,7 @@ export default function StoryCard({ state, request, onPreviewPdf, onDismiss }: P
         </div>
       </header>
 
-      {expanded && state.status === "pending" && (
+      {state.status === "pending" && (
         <div
           className="story-skeleton"
           role="status"
@@ -101,9 +103,16 @@ export default function StoryCard({ state, request, onPreviewPdf, onDismiss }: P
         </div>
       )}
       {state.status === "error" && <p className="error">{state.error}</p>}
-      {expanded && state.status === "done" && (
+      {state.status === "done" && (
         <>
-          <div className="story-text" style={{ whiteSpace: "pre-wrap" }}>
+          <div
+            className={
+              expanded
+                ? "story-text"
+                : "story-text story-text--collapsed"
+            }
+            style={{ whiteSpace: "pre-wrap" }}
+          >
             {state.text}
           </div>
           <div className="actions">

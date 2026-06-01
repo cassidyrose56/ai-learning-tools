@@ -553,18 +553,28 @@ section .bundle-actions {
   gap: 10px;
 }
 
-.card-toggle {
+.card-chevron {
   background: transparent;
-  border: 1px solid var(--border-strong);
+  border: none;
   color: var(--ink-muted);
-  padding: 4px 10px;
-  font-size: 0.85rem;
+  font-size: 1.05rem;
+  line-height: 1;
+  padding: 2px 8px;
   border-radius: var(--radius-sm);
+  cursor: pointer;
 }
 
-.card-toggle:hover:not(:disabled) {
+.card-chevron:hover {
   background: var(--surface-2);
   color: var(--ink);
+}
+
+.story-text--collapsed {
+  display: -webkit-box;
+  -webkit-line-clamp: 5;
+  line-clamp: 5;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
 .card-close {
