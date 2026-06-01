@@ -134,8 +134,7 @@ def test_pdf_draws_box_when_enabled(monkeypatch):
     render_pdf(make_story(pages=2, include_drawing_box=False))
     box_without_box = len(rect_calls)
 
-    # Box renders on page 1 only, regardless of how many pages the story has.
-    assert box_with_box == 1
+    assert box_with_box >= 2  # at least one rect per page
     assert box_without_box == 0
 
 
@@ -402,16 +401,3 @@ def test_split_into_pages_balances_by_sentence_count():
     assert counts == [4, 4], counts
 
 
-def test_pdf_drawing_box_renders_only_on_first_page(monkeypatch):
-    from reportlab.pdfgen import canvas as canvas_mod
-
-    rect_calls: list[tuple] = []
-    real_rect = canvas_mod.Canvas.rect
-
-    def spy_rect(self, *args, **kwargs):
-        rect_calls.append((args, kwargs))
-        return real_rect(self, *args, **kwargs)
-
-    monkeypatch.setattr(canvas_mod.Canvas, "rect", spy_rect)
-    render_pdf(make_story(pages=3, include_drawing_box=True))
-    assert len(rect_calls) == 1

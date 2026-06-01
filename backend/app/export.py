@@ -112,7 +112,7 @@ def render_pdf(story: StoryInput) -> bytes:
     for idx, chunk in enumerate(chunks):
         text_top = height - _MARGIN
 
-        if story.include_drawing_box and idx == 0:
+        if story.include_drawing_box:
             box_top = text_top
             box_bottom = box_top - (height - 2 * _MARGIN) * _BOX_FRACTION
             box_height = box_top - box_bottom
