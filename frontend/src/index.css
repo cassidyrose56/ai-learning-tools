@@ -7,30 +7,37 @@
     serif;
   --mono: ui-monospace, "SF Mono", Consolas, monospace;
 
-  --bg: #FDF8EA;
+  --bg: #F4F1DE;
   --surface: #FFFFFF;
-  --surface-2: #F4ECD6;
-  --border: #ECDFB8;
-  --border-strong: #D9C58C;
+  --surface-2: #EAE3C7;
+  --surface-warm: #F8E1B8;
+  --border: #DCD4B0;
+  --border-strong: #C2B788;
 
-  --ink: #1E1A14;
-  --ink-muted: #5F574A;
-  --ink-soft: #8A8170;
+  --ink: #1E1D2C;
+  --ink-muted: #4A4D66;
+  --ink-soft: #7B7E8F;
 
-  --accent: #DFA025;
-  --accent-strong: #B27A12;
-  --accent-bg: rgba(223, 160, 37, 0.14);
-  --accent-border: rgba(223, 160, 37, 0.45);
-  --accent-on: #FFFFFF;
+  --accent: #E07A5F;
+  --accent-strong: #C8654A;
+  --accent-bg: rgba(224, 122, 95, 0.14);
+  --accent-border: rgba(224, 122, 95, 0.45);
+  --accent-on: #1E1A14;
 
-  --link-focus: #4A5A8A;
+  --indigo: #3D405B;
+  --indigo-strong: #2A2D44;
 
-  --warning: #C24D5B;
-  --warning-bg: rgba(194, 77, 91, 0.12);
-  --warning-border: rgba(194, 77, 91, 0.42);
+  --success: #81B29A;
+  --success-bg: rgba(129, 178, 154, 0.20);
 
-  --error: #C24D5B;
-  --error-bg: rgba(194, 77, 91, 0.12);
+  --link-focus: #3D405B;
+
+  --warning: #B25E45;
+  --warning-bg: rgba(178, 94, 69, 0.14);
+  --warning-border: rgba(178, 94, 69, 0.42);
+
+  --error: #B25E45;
+  --error-bg: rgba(178, 94, 69, 0.14);
 
   --radius-sm: 6px;
   --radius-md: 10px;
@@ -58,30 +65,38 @@
 
 [data-theme="dark"] {
   color-scheme: dark;
-  --bg: #1F1B14;
-  --surface: #2A241D;
-  --surface-2: #34291F;
-  --border: #4A3D2C;
-  --border-strong: #5C4A33;
 
-  --ink: #F3EBD8;
-  --ink-muted: #B6A98F;
-  --ink-soft: #8C7E65;
+  --bg: #1F1F2E;
+  --surface: #2A2A3E;
+  --surface-2: #34344A;
+  --surface-warm: #3F3225;
+  --border: #46465E;
+  --border-strong: #5C5C76;
 
-  --accent: #F0B547;
-  --accent-strong: #FFCC6A;
-  --accent-bg: rgba(240, 181, 71, 0.16);
-  --accent-border: rgba(240, 181, 71, 0.45);
-  --accent-on: #1F1B14;
+  --ink: #F4F1DE;
+  --ink-muted: #BCB9A8;
+  --ink-soft: #8C8A7A;
+
+  --accent: #F09578;
+  --accent-strong: #F2A88E;
+  --accent-bg: rgba(240, 149, 120, 0.18);
+  --accent-border: rgba(240, 149, 120, 0.45);
+  --accent-on: #1F1F2E;
+
+  --indigo: #8FA1D8;
+  --indigo-strong: #A5B4E0;
+
+  --success: #A0CFB8;
+  --success-bg: rgba(160, 207, 184, 0.20);
 
   --link-focus: #8FA1D8;
 
-  --warning: #E48A93;
-  --warning-bg: rgba(228, 138, 147, 0.16);
-  --warning-border: rgba(228, 138, 147, 0.42);
+  --warning: #E8A48E;
+  --warning-bg: rgba(232, 164, 142, 0.18);
+  --warning-border: rgba(232, 164, 142, 0.42);
 
-  --error: #E48A93;
-  --error-bg: rgba(228, 138, 147, 0.16);
+  --error: #E8A48E;
+  --error-bg: rgba(232, 164, 142, 0.18);
 
   --shadow-sm: 0 1px 0 rgba(0, 0, 0, 0.4),
     0 2px 6px rgba(0, 0, 0, 0.32);
@@ -93,30 +108,38 @@
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme]) {
     color-scheme: dark;
-    --bg: #1F1B14;
-    --surface: #2A241D;
-    --surface-2: #34291F;
-    --border: #4A3D2C;
-    --border-strong: #5C4A33;
 
-    --ink: #F3EBD8;
-    --ink-muted: #B6A98F;
-    --ink-soft: #8C7E65;
+    --bg: #1F1F2E;
+    --surface: #2A2A3E;
+    --surface-2: #34344A;
+    --surface-warm: #3F3225;
+    --border: #46465E;
+    --border-strong: #5C5C76;
 
-    --accent: #F0B547;
-    --accent-strong: #FFCC6A;
-    --accent-bg: rgba(240, 181, 71, 0.16);
-    --accent-border: rgba(240, 181, 71, 0.45);
-    --accent-on: #1F1B14;
+    --ink: #F4F1DE;
+    --ink-muted: #BCB9A8;
+    --ink-soft: #8C8A7A;
+
+    --accent: #F09578;
+    --accent-strong: #F2A88E;
+    --accent-bg: rgba(240, 149, 120, 0.18);
+    --accent-border: rgba(240, 149, 120, 0.45);
+    --accent-on: #1F1F2E;
+
+    --indigo: #8FA1D8;
+    --indigo-strong: #A5B4E0;
+
+    --success: #A0CFB8;
+    --success-bg: rgba(160, 207, 184, 0.20);
 
     --link-focus: #8FA1D8;
 
-    --warning: #E48A93;
-    --warning-bg: rgba(228, 138, 147, 0.16);
-    --warning-border: rgba(228, 138, 147, 0.42);
+    --warning: #E8A48E;
+    --warning-bg: rgba(232, 164, 142, 0.18);
+    --warning-border: rgba(232, 164, 142, 0.42);
 
-    --error: #E48A93;
-    --error-bg: rgba(228, 138, 147, 0.16);
+    --error: #E8A48E;
+    --error-bg: rgba(232, 164, 142, 0.18);
 
     --shadow-sm: 0 1px 0 rgba(0, 0, 0, 0.4),
       0 2px 6px rgba(0, 0, 0, 0.32);
@@ -170,7 +193,7 @@ p {
 }
 
 a {
-  color: var(--accent-strong);
+  color: var(--indigo);
   text-decoration-thickness: 1px;
   text-underline-offset: 2px;
 }

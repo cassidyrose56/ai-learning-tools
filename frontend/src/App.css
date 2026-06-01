@@ -71,8 +71,8 @@ button[type="submit"] {
 }
 
 button[type="submit"]:hover:not(:disabled) {
-  background: var(--ink);
-  border-color: var(--ink);
+  background: var(--accent-strong);
+  border-color: var(--accent-strong);
 }
 
 input[type="text"],
@@ -213,7 +213,7 @@ fieldset input[type="radio"] {
 }
 
 .categories > div > button:hover {
-  color: var(--accent-strong);
+  color: var(--indigo);
   background: transparent;
 }
 
@@ -527,8 +527,8 @@ section .bundle-actions {
 }
 
 .modal > footer > button:last-child:hover:not(:disabled) {
-  background: var(--ink);
-  border-color: var(--ink);
+  background: var(--accent-strong);
+  border-color: var(--accent-strong);
 }
 
 /* ============================================================
