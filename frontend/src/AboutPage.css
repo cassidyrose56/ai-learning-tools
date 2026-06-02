@@ -1,0 +1,30 @@
+.about-page {
+  display: flex;
+  flex-direction: column;
+  gap: 2.5rem;
+  padding-bottom: 2rem;
+  max-width: 42rem;
+  line-height: 1.6;
+}
+
+.about-page > section {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.about-page h2 {
+  margin-bottom: 0.25rem;
+}
+
+.about-page ul {
+  padding-left: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.about-page a {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}

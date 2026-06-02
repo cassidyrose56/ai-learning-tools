@@ -2,11 +2,11 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Ship a single-page web app that lets a K–5 teacher generate one Claude-written story per selected topic, grade-level-checked by an OpenAI evaluator, and exportable as Word or PDF (single file or zip bundle).
+**Goal:** Ship a single-page web app that lets a K–5 teacher generate one Claude-written story per selected topic, grade-level-checked by a Gemini-based evaluator (using the Learning Commons grade-level rubric), and exportable as Word or PDF (single file or zip bundle).
 
 **Architecture:** FastAPI backend with one SSE generation endpoint and three JSON/file endpoints (presets, export, bundle); Vite + React + TypeScript frontend that streams the SSE feed into per-topic story cards. The Learning Commons evaluator is consumed as a `vendor/evaluators` git submodule via a thin `evaluator.py` adapter. No persistence.
 
-**Tech Stack:** Python 3.12, FastAPI, Anthropic SDK (`claude-sonnet-4-6`), OpenAI SDK, Jinja2, python-docx, reportlab, pypdf (tests). Vite + React 18 + TypeScript, Vitest, @testing-library/react. uv for Python deps, npm for frontend deps.
+**Tech Stack:** Python 3.12, FastAPI, Anthropic SDK (`claude-sonnet-4-6`), `langchain-google-genai` (`gemini-2.5-pro` at temperature 0.25, mirroring the upstream notebook), Jinja2, python-docx, reportlab, pypdf (tests). Vite + React 18 + TypeScript, Vitest, @testing-library/react. uv for Python deps, npm for frontend deps. The grade-level rubric + procedure prompts are byte-identical snapshots of the upstream `learning-commons-org/evaluators` submodule, stored under `backend/app/evaluator_prompts/grade-level/v1/` so we can iterate on them (future `v2/`, etc.) without polluting the submodule.
 
 ---
 
@@ -15,7 +15,7 @@
 1. Repo scaffolding (submodule, `.env.example`, Makefile, README stub)
 2. Backend project + config + schemas
 3. Generator (Jinja2 prompts + Anthropic wrapper)
-4. Evaluator adapter (rubric load + OpenAI call + transport retries)
+4. Evaluator adapter (versioned rubric load + Gemini call + band-to-grade mapping + transport retries)
 5. Pipeline (per-topic generate+evaluate loop)
 6. Orchestrator + presets + SSE `/api/generate`
 7. DOCX export
@@ -75,7 +75,15 @@ git commit -m "chore: add learning-commons evaluators as submodule at vendor/eva
 - [ ] **Step 1: Create `.env.example`**
 
 ```bash
+# Used by the story generator (Claude)
 ANTHROPIC_API_KEY=sk-ant-...
+
+# Used by the grade-level evaluator (Gemini 2.5 Pro)
+GOOGLE_API_KEY=...
+
+# Not used in v1. Reserved for v2 — some additional Learning Commons
+# evaluators (vocabulary, sentence structure, etc.) are calibrated on
+# OpenAI models. See docs/v2-ideas.md.
 OPENAI_API_KEY=sk-...
 ```
 
@@ -129,7 +137,7 @@ spec.
 ## Setup
 
 1. `git submodule update --init --recursive`
-2. Copy `.env.example` → `.env` and fill in `ANTHROPIC_API_KEY` and `OPENAI_API_KEY`.
+2. Copy `.env.example` → `.env` and fill in `ANTHROPIC_API_KEY` and `GOOGLE_API_KEY`. (`OPENAI_API_KEY` is reserved for v2 — leave the placeholder.)
 3. Backend: `cd backend && uv sync`
 4. Frontend: `cd frontend && npm install`
 
@@ -175,7 +183,7 @@ git commit -m "docs: add README scaffolding"
 ```bash
 cd backend
 uv init --bare --python 3.12
-uv add fastapi 'uvicorn[standard]' anthropic openai jinja2 httpx pydantic 'pydantic-settings' python-docx reportlab
+uv add fastapi 'uvicorn[standard]' anthropic langchain-google-genai jinja2 httpx pydantic 'pydantic-settings' python-docx reportlab
 uv add --dev pytest pytest-asyncio pypdf ruff
 ```
 
@@ -221,18 +229,22 @@ git add backend/pyproject.toml backend/uv.lock backend/app backend/tests
 git commit -m "chore(backend): initialize uv project with FastAPI + test deps"
 ```
 
-### Task 2.2: `config.py` — settings + `WORDS_PER_PAGE`
+### Task 2.2: `config.py` (Settings + retry caps) and `pedagogy.py` (editorial tables)
+
+Two files because they belong to two different categories. `config.py` is env-driven runtime settings (API keys, model IDs, prompt-version selector). `pedagogy.py` holds editorial constants the operator does not tune from outside the code — pedagogy choices like "how many words per page is on-level for grade 3." Keeping them split prevents the file from becoming a junk drawer as later phases add `FONT_SIZES`, the grade-to-band mapping, and similar tables.
 
 **Files:**
 - Create: `backend/app/config.py`
+- Create: `backend/app/pedagogy.py`
 - Create: `backend/tests/test_config.py`
+- Create: `backend/tests/test_pedagogy.py`
 
-- [ ] **Step 1: Write failing test**
+- [ ] **Step 1: Write failing tests**
 
-`backend/tests/test_config.py`:
+`backend/tests/test_pedagogy.py`:
 
 ```python
-from app.config import WORDS_PER_PAGE, MAX_RETRIES, EVALUATOR_TRANSPORT_RETRIES, get_settings
+from app.pedagogy import WORDS_PER_PAGE
 
 
 def test_words_per_page_doubles_when_drawing_box_off():
@@ -240,6 +252,12 @@ def test_words_per_page_doubles_when_drawing_box_off():
         on = WORDS_PER_PAGE[(level, True)]
         off = WORDS_PER_PAGE[(level, False)]
         assert off == on * 2, f"level {level}: {off} != 2*{on}"
+```
+
+`backend/tests/test_config.py`:
+
+```python
+from app.config import MAX_RETRIES, EVALUATOR_TRANSPORT_RETRIES, get_settings
 
 
 def test_retry_caps():
@@ -249,29 +267,52 @@ def test_retry_caps():
 
 def test_settings_reads_env(monkeypatch):
     monkeypatch.setenv("ANTHROPIC_API_KEY", "anth-test")
-    monkeypatch.setenv("OPENAI_API_KEY", "oa-test")
+    monkeypatch.setenv("GOOGLE_API_KEY", "g-test")
     get_settings.cache_clear()
     s = get_settings()
     assert s.anthropic_api_key == "anth-test"
-    assert s.openai_api_key == "oa-test"
+    assert s.google_api_key == "g-test"
     assert s.claude_model == "claude-sonnet-4-6"
+    assert s.gemini_model == "gemini-2.5-pro"
+    assert s.evaluator_prompt_version == "v1"
+
+
+def test_settings_evaluator_prompt_version_overridable(monkeypatch):
+    monkeypatch.setenv("EVALUATOR_PROMPT_VERSION", "v2")
+    get_settings.cache_clear()
+    assert get_settings().evaluator_prompt_version == "v2"
 ```
 
 - [ ] **Step 2: Run, confirm failure**
 
-Run: `cd backend && uv run pytest tests/test_config.py -v`
-Expected: ImportError / ModuleNotFoundError on `app.config`.
+Run: `cd backend && uv run pytest tests/test_config.py tests/test_pedagogy.py -v`
+Expected: `ModuleNotFoundError` on `app.config` and `app.pedagogy`.
 
-- [ ] **Step 3: Implement `config.py`**
+- [ ] **Step 3: Implement `pedagogy.py`**
 
-`backend/app/config.py`:
+`backend/app/pedagogy.py`:
 
 ```python
-from functools import lru_cache
-from pydantic_settings import BaseSettings, SettingsConfigDict
-
+# Editorial / pedagogy constants. Things that encode "what counts as
+# on-level for grade N" — not things the operator tunes via env or UI.
+#
+# Coming in later v1 phases (drop into THIS file when they land — don't
+# scatter them across consumer modules):
+#   - GRADE_TO_BAND   single-grade -> Learning Commons band, added in
+#                     Task 4.1 (evaluator)
+#   - FONT_SIZES      per-grade PDF body font, added in Task 8.2 (renderer)
+#
+# v2 brainstorms (see docs/v2-ideas.md "Pedagogy table extensions"):
+#   - Scaffolding playbook    (when to add definitions, picture support, etc.)
+#   - Vocabulary allow/avoid  (per-grade word lists)
+#   - Sentence-length targets (per-grade max sentence length)
 
 WORDS_PER_PAGE: dict[tuple[str, bool], int] = {
+    # (reading_level, include_drawing_box): words per page
+    #
+    # Box-on values match conventional leveled-reader page counts
+    # (which assume illustration space at the top of the page).
+    # Box-off values are doubled to fill the area freed up by removing the box.
     ("K", True):  20,  ("K", False):  40,
     ("1", True):  40,  ("1", False):  80,
     ("2", True):  70,  ("2", False): 140,
@@ -279,6 +320,19 @@ WORDS_PER_PAGE: dict[tuple[str, bool], int] = {
     ("4", True): 150,  ("4", False): 300,
     ("5", True): 200,  ("5", False): 400,
 }
+```
+
+- [ ] **Step 4: Implement `config.py`**
+
+`backend/app/config.py`:
+
+```python
+from functools import lru_cache
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# Editorial / pedagogy constants (WORDS_PER_PAGE, FONT_SIZES, grade-to-band,
+# etc.) live in app/pedagogy.py — keep them out of here so config.py stays
+# the home for env-driven runtime settings only.
 
 MAX_RETRIES = 3
 EVALUATOR_TRANSPORT_RETRIES = 3
@@ -288,8 +342,11 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file="../.env", extra="ignore")
 
     anthropic_api_key: str = ""
-    openai_api_key: str = ""
+    google_api_key: str = ""
+    openai_api_key: str = ""  # reserved for v2; not used in v1
     claude_model: str = "claude-sonnet-4-6"
+    gemini_model: str = "gemini-2.5-pro"
+    evaluator_prompt_version: str = "v1"
 
 
 @lru_cache
@@ -297,16 +354,17 @@ def get_settings() -> Settings:
     return Settings()
 ```
 
-- [ ] **Step 4: Run, confirm pass**
+- [ ] **Step 5: Run, confirm pass**
 
-Run: `cd backend && uv run pytest tests/test_config.py -v`
-Expected: 3 passed.
+Run: `cd backend && uv run pytest tests/test_config.py tests/test_pedagogy.py -v`
+Expected: 5 passed.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
-git add backend/app/config.py backend/tests/test_config.py
-git commit -m "feat(backend): add config with WORDS_PER_PAGE lookup and Settings"
+git add backend/app/config.py backend/app/pedagogy.py \
+        backend/tests/test_config.py backend/tests/test_pedagogy.py
+git commit -m "feat(backend): add pedagogy.py (WORDS_PER_PAGE) and config.py (Settings)"
 ```
 
 ### Task 2.3: `schemas.py` — request/response/event models
@@ -441,7 +499,7 @@ class BundleRequest(BaseModel):
 
 
 class EvalResult(BaseModel):
-    matched: bool
+    appropriate: bool
     predicted_grade: str | None
     feedback: str
 
@@ -460,7 +518,7 @@ class DoneEvent(BaseModel):
     story_id: str
     text: str
     predicted_grade: str | None
-    matched: bool
+    appropriate: bool
     attempts: int
 
 
@@ -609,7 +667,7 @@ def test_feedback_appears_in_revision_prompt():
 
 
 def test_target_words_box_on_vs_off():
-    from app.config import WORDS_PER_PAGE
+    from app.pedagogy import WORDS_PER_PAGE
 
     assert WORDS_PER_PAGE[("3", True)] == 100
     assert WORDS_PER_PAGE[("3", False)] == 200
@@ -749,85 +807,126 @@ git commit -m "feat(backend): add generator with Jinja2 prompt and Anthropic cal
 
 ## Phase 4 — Evaluator adapter
 
-### Task 4.1: `evaluator.py` — rubric load + OpenAI call + transport retries
+### Task 4.1: `evaluator.py` — Gemini judge + band-to-grade mapping + transport retries
 
 **Files:**
 - Create: `backend/app/evaluator.py`
 - Create: `backend/tests/test_evaluator.py`
-- Create: `backend/tests/fixtures/fake_rubric.txt`
+- Modify: `backend/app/pedagogy.py` (add `GRADE_TO_BAND`)
 
-- [ ] **Step 1: Drop in a fixture rubric for tests**
+The grade-level rubric prompts already live at
+`backend/app/evaluator_prompts/grade-level/v1/{system,user}.txt` — they were
+snapshotted from the submodule during repo setup. No fixture rubric is
+needed; tests read the real v1 snapshot.
 
-Create `backend/tests/fixtures/fake_rubric.txt`:
+- [ ] **Step 0: Add `GRADE_TO_BAND` to `pedagogy.py`**
 
+Insert into `backend/app/pedagogy.py`, below `WORDS_PER_PAGE`:
+
+```python
+# Single-grade -> Learning Commons grade band. The grade-level rubric
+# only emits bands (K-1, 2-3, 4-5, 6-8, 9-10, 11-CCR); our UI offers
+# single grades. evaluator.py expands the teacher's target grade
+# through this table before comparing against the judge's verdict.
+GRADE_TO_BAND: dict[str, str] = {
+    "K": "K-1", "1": "K-1",
+    "2": "2-3", "3": "2-3",
+    "4": "4-5", "5": "4-5",
+}
 ```
-You are a grade-level evaluator. Given a passage, output JSON with keys
-`grade` (one of K,1,2,3,4,5) and `feedback` (short explanation).
-```
 
-- [ ] **Step 2: Write failing tests**
+- [ ] **Step 1: Write failing tests**
 
 `backend/tests/test_evaluator.py`:
 
 ```python
 import json
-from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from app import evaluator as eval_mod
-from app.evaluator import evaluate_grade_level, _load_rubric
-
-
-FIXTURE_RUBRIC = Path(__file__).parent / "fixtures" / "fake_rubric.txt"
+from app.evaluator import (
+    evaluate_grade_level,
+    _band_for_grade,
+    _load_prompts,
+)
 
 
 @pytest.fixture(autouse=True)
-def stub_rubric(monkeypatch):
-    monkeypatch.setattr(eval_mod, "_RUBRIC_PATH", FIXTURE_RUBRIC)
-    eval_mod._load_rubric.cache_clear()
+def reset_caches():
+    eval_mod._load_prompts.cache_clear()
+    yield
+    eval_mod._load_prompts.cache_clear()
 
 
-def _mock_completion(content: str):
+def _ai_message(payload: dict | str):
     msg = MagicMock()
-    msg.message.content = content
-    response = MagicMock()
-    response.choices = [msg]
-    return response
+    msg.content = json.dumps(payload) if isinstance(payload, dict) else payload
+    return msg
 
 
-def _mock_openai(responses):
-    client = MagicMock()
-    client.chat.completions.create = AsyncMock(side_effect=responses)
-    return client
+def _mock_llm(responses):
+    llm = MagicMock()
+    llm.ainvoke = AsyncMock(side_effect=responses)
+    return llm
 
 
-async def test_parses_matched_response(monkeypatch):
-    payload = json.dumps({"grade": "3", "feedback": "On level."})
-    client = _mock_openai([_mock_completion(payload)])
-    monkeypatch.setattr(eval_mod, "_client", lambda: client)
+@pytest.mark.parametrize(
+    "grade,band",
+    [("K", "K-1"), ("1", "K-1"), ("2", "2-3"), ("3", "2-3"), ("4", "4-5"), ("5", "4-5")],
+)
+def test_band_for_grade(grade, band):
+    assert _band_for_grade(grade) == band
+
+
+def test_load_prompts_reads_v1_snapshot():
+    system, user = _load_prompts("v1")
+    assert "grade level appropriateness" in system.lower()
+    assert user.strip()  # non-empty
+
+
+async def test_parses_appropriate_band_response(monkeypatch):
+    payload = {
+        "reasoning": "...",
+        "grade": "2-3",
+        "alternative_grade": "K-1",
+        "scaffolding_needed": "Pre-teach 'soccer'.",
+        "revision_guidance": "Could trim one sentence for tighter pacing.",
+    }
+    monkeypatch.setattr(eval_mod, "_llm", lambda: _mock_llm([_ai_message(payload)]))
 
     result = await evaluate_grade_level("Some story.", "3")
-    assert result.matched is True
-    assert result.predicted_grade == "3"
-    assert "On level" in result.feedback
+    assert result.appropriate is True
+    assert result.predicted_grade == "2-3"
+    assert "K-1" in result.feedback
+    assert "Could trim" in result.feedback
+    # scaffolding_needed is teacher-facing and must NOT be fed back to Claude.
+    assert "Pre-teach" not in result.feedback
 
 
 async def test_parses_mismatch_response(monkeypatch):
-    payload = json.dumps({"grade": "5", "feedback": "Too hard."})
-    client = _mock_openai([_mock_completion(payload)])
-    monkeypatch.setattr(eval_mod, "_client", lambda: client)
+    payload = {
+        "reasoning": "Sentences too long.",
+        "grade": "4-5",
+        "alternative_grade": "2-3",
+        "scaffolding_needed": "Read aloud with vocabulary support.",
+        "revision_guidance": "Chunk into shorter sentences and replace 'velocity' with 'speed'.",
+    }
+    monkeypatch.setattr(eval_mod, "_llm", lambda: _mock_llm([_ai_message(payload)]))
 
     result = await evaluate_grade_level("Some story.", "3")
-    assert result.matched is False
-    assert result.predicted_grade == "5"
-    assert "Too hard" in result.feedback
+    assert result.appropriate is False
+    assert result.predicted_grade == "4-5"
+    assert "Chunk into shorter sentences" in result.feedback
+    assert "Sentences too long" in result.feedback
+    # scaffolding_needed is teacher-facing and must NOT be fed back to Claude.
+    assert "Read aloud" not in result.feedback
 
 
 async def test_retries_three_times_then_gives_up(monkeypatch):
-    client = MagicMock()
-    client.chat.completions.create = AsyncMock(side_effect=RuntimeError("boom"))
-    monkeypatch.setattr(eval_mod, "_client", lambda: client)
+    llm = MagicMock()
+    llm.ainvoke = AsyncMock(side_effect=RuntimeError("boom"))
+    monkeypatch.setattr(eval_mod, "_llm", lambda: llm)
     sleeps: list[float] = []
 
     async def fake_sleep(s):
@@ -836,37 +935,68 @@ async def test_retries_three_times_then_gives_up(monkeypatch):
     monkeypatch.setattr(eval_mod.asyncio, "sleep", fake_sleep)
 
     result = await evaluate_grade_level("Some story.", "3")
-    assert result.matched is False
+    assert result.appropriate is False
     assert result.predicted_grade is None
     assert result.feedback == "evaluator unavailable"
-    assert client.chat.completions.create.await_count == 3
+    assert llm.ainvoke.await_count == 3
     assert sleeps == [0.5, 1.0]
 
 
 async def test_malformed_json_treated_as_transient(monkeypatch):
-    good = json.dumps({"grade": "3", "feedback": "ok"})
-    client = _mock_openai(
-        [_mock_completion("not json"), _mock_completion(good)]
+    good = {
+        "reasoning": "ok",
+        "grade": "2-3",
+        "alternative_grade": "K-1",
+        "scaffolding_needed": "",
+        "revision_guidance": "",
+    }
+    monkeypatch.setattr(
+        eval_mod,
+        "_llm",
+        lambda: _mock_llm([_ai_message("not json"), _ai_message(good)]),
     )
-    monkeypatch.setattr(eval_mod, "_client", lambda: client)
     monkeypatch.setattr(eval_mod.asyncio, "sleep", AsyncMock())
 
     result = await evaluate_grade_level("Some story.", "3")
-    assert result.matched is True
-    assert client.chat.completions.create.await_count == 2
+    assert result.appropriate is True
 
 
-def test_load_rubric_reads_fixture():
-    text = _load_rubric()
-    assert "grade-level evaluator" in text
+async def test_prompt_version_selectable(monkeypatch, tmp_path):
+    # Drop a fake v2 snapshot under a temp prompt root and point the loader at it.
+    v2 = tmp_path / "grade-level" / "v2"
+    v2.mkdir(parents=True)
+    (v2 / "system.txt").write_text("fake v2 system")
+    (v2 / "user.txt").write_text("fake v2 user with {text}")
+    monkeypatch.setattr(eval_mod, "_PROMPT_ROOT", tmp_path)
+    eval_mod._load_prompts.cache_clear()
+
+    monkeypatch.setattr(eval_mod, "_active_version", lambda: "v2")
+    payload = {
+        "reasoning": "x", "grade": "2-3", "alternative_grade": "K-1",
+        "scaffolding_needed": "", "revision_guidance": "",
+    }
+    captured: list = []
+
+    async def capture_invoke(messages):
+        captured.append(messages)
+        return _ai_message(payload)
+
+    llm = MagicMock()
+    llm.ainvoke = AsyncMock(side_effect=capture_invoke)
+    monkeypatch.setattr(eval_mod, "_llm", lambda: llm)
+
+    await evaluate_grade_level("hello", "3")
+    # The fake v2 system prompt should have been used
+    sent = "".join(getattr(m, "content", "") for m in captured[0])
+    assert "fake v2 system" in sent
 ```
 
-- [ ] **Step 3: Run, confirm failure**
+- [ ] **Step 2: Run, confirm failure**
 
 Run: `cd backend && uv run pytest tests/test_evaluator.py -v`
 Expected: ImportError on `app.evaluator`.
 
-- [ ] **Step 4: Implement evaluator**
+- [ ] **Step 3: Implement evaluator**
 
 `backend/app/evaluator.py`:
 
@@ -877,62 +1007,104 @@ import logging
 from functools import lru_cache
 from pathlib import Path
 
-from openai import AsyncOpenAI
+from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_google_genai import ChatGoogleGenerativeAI
 
 from app.config import EVALUATOR_TRANSPORT_RETRIES, get_settings
+from app.pedagogy import GRADE_TO_BAND
 from app.schemas import EvalResult
 
 log = logging.getLogger(__name__)
 
-_RUBRIC_PATH = (
-    Path(__file__).resolve().parents[2]
-    / "vendor"
-    / "evaluators"
-    / "evals"
-    / "prompts"
-    / "grade_level.md"
-)
+_PROMPT_ROOT = Path(__file__).parent / "evaluator_prompts"
+
+
+def _band_for_grade(grade: str) -> str:
+    return GRADE_TO_BAND[grade]
+
+
+def _active_version() -> str:
+    return get_settings().evaluator_prompt_version
+
+
+@lru_cache(maxsize=8)
+def _load_prompts(version: str) -> tuple[str, str]:
+    base = _PROMPT_ROOT / "grade-level" / version
+    return (
+        (base / "system.txt").read_text(encoding="utf-8"),
+        (base / "user.txt").read_text(encoding="utf-8"),
+    )
 
 
 @lru_cache
-def _load_rubric() -> str:
-    return _RUBRIC_PATH.read_text(encoding="utf-8")
-
-
-@lru_cache
-def _client() -> AsyncOpenAI:
-    return AsyncOpenAI(api_key=get_settings().openai_api_key)
+def _llm() -> ChatGoogleGenerativeAI:
+    return ChatGoogleGenerativeAI(
+        model=get_settings().gemini_model,
+        temperature=0.25,
+        timeout=120,
+        google_api_key=get_settings().google_api_key,
+    )
 
 
 _BACKOFF = [0.5, 1.0, 2.0]
 
 
+def _build_feedback(payload: dict) -> str:
+    # `scaffolding_needed` (from upstream rubric) describes teacher-facing
+    # supports for reading the text at the lower `alternative_grade` band —
+    # it's not generator-revision guidance, and we deliberately don't feed
+    # it back to Claude. We ask Gemini for a separate `revision_guidance`
+    # field in the JSON footer and use that for the regenerator prompt.
+    reasoning = str(payload.get("reasoning", "")).strip()
+    alt = str(payload.get("alternative_grade", "")).strip()
+    revision = str(payload.get("revision_guidance", "")).strip()
+    parts: list[str] = []
+    if reasoning:
+        parts.append(f"Reasoning: {reasoning}")
+    if alt:
+        parts.append(f"Closer fit was band {alt}.")
+    if revision:
+        parts.append(f"Suggested revisions: {revision}")
+    return " ".join(parts)
+
+
 async def evaluate_grade_level(text: str, target_reading_level: str) -> EvalResult:
-    rubric = _load_rubric()
-    user_msg = (
-        f"Target reading level: {target_reading_level}\n\n"
-        f"Passage:\n{text}\n\n"
-        "Respond with JSON: {\"grade\": \"<K|1|2|3|4|5>\", \"feedback\": \"<short>\"}."
+    system_prompt, user_prompt = _load_prompts(_active_version())
+    # The upstream user prompt expects a {text} placeholder. We also pass
+    # the target grade as context for the judge to anchor on.
+    hydrated_user = (
+        f"Target student grade: {target_reading_level}\n\n"
+        f"Procedure:\n{user_prompt}\n\n"
+        f"Text to evaluate:\n{text}\n\n"
+        "Return JSON only, no prose, with these fields: "
+        '{"reasoning": "...", "grade": "<band>", '
+        '"alternative_grade": "<band>", "scaffolding_needed": "...", '
+        '"revision_guidance": "..."}. '
+        "`scaffolding_needed` is the upstream rubric's teacher-facing "
+        "supports for reading at `alternative_grade` (pictures, "
+        "pre-teaching, read-aloud, etc.). `revision_guidance` is "
+        "separate: concrete suggestions for revising the TEXT itself "
+        "(shorter sentences, simpler vocabulary, fewer concepts, or — "
+        "if the text is too easy — longer sentences, richer vocabulary) "
+        "so the next draft better hits the target student grade. "
+        "Populate `revision_guidance` whether the text is currently too "
+        "hard OR too easy."
     )
+    expected_band = _band_for_grade(target_reading_level)
+
     last_err: Exception | None = None
     for attempt in range(EVALUATOR_TRANSPORT_RETRIES):
         try:
-            response = await _client().chat.completions.create(
-                model="gpt-4o-mini",
-                temperature=0,
-                messages=[
-                    {"role": "system", "content": rubric},
-                    {"role": "user", "content": user_msg},
-                ],
+            response = await _llm().ainvoke(
+                [SystemMessage(content=system_prompt), HumanMessage(content=hydrated_user)]
             )
-            raw = response.choices[0].message.content or ""
+            raw = response.content or ""
             data = json.loads(raw)
-            grade = str(data["grade"])
-            feedback = str(data.get("feedback", ""))
+            predicted_band = str(data["grade"])
             return EvalResult(
-                matched=(grade == target_reading_level),
-                predicted_grade=grade,
-                feedback=feedback,
+                appropriate=(predicted_band == expected_band),
+                predicted_grade=predicted_band,
+                feedback=_build_feedback(data),
             )
         except (json.JSONDecodeError, KeyError, Exception) as exc:  # noqa: BLE001
             last_err = exc
@@ -941,22 +1113,26 @@ async def evaluate_grade_level(text: str, target_reading_level: str) -> EvalResu
                 await asyncio.sleep(_BACKOFF[attempt])
     log.error("evaluator unavailable after retries: %s", last_err)
     return EvalResult(
-        matched=False, predicted_grade=None, feedback="evaluator unavailable"
+        appropriate=False, predicted_grade=None, feedback="evaluator unavailable"
     )
 ```
 
-> **NOTE:** If Phase 1 Task 1.1 Step 2 discovered the rubric prompt lives at a different path within `vendor/evaluators/evals/prompts/`, update `_RUBRIC_PATH` here to the real filename. The path is a real filesystem read; if it does not exist at runtime the first generation request will fail loudly with `FileNotFoundError`, which is the desired signal.
+> **Why `predicted_grade` carries a band string:** The wire-level SSE
+> `done` event already calls this field `predicted_grade`. Rather than
+> introduce a parallel `predicted_band` field and update every consumer,
+> we keep the name and document that the value is the rubric band
+> (`"K-1"`, `"2-3"`, `"4-5"`, …). Frontend renders it as-is.
 
-- [ ] **Step 5: Run, confirm pass**
+- [ ] **Step 4: Run, confirm pass**
 
 Run: `cd backend && uv run pytest tests/test_evaluator.py -v`
-Expected: 5 passed.
+Expected: 8 passed.
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 5: Commit**
 
 ```bash
-git add backend/app/evaluator.py backend/tests/test_evaluator.py backend/tests/fixtures
-git commit -m "feat(backend): add evaluator adapter with OpenAI call and transport retries"
+git add backend/app/evaluator.py backend/app/pedagogy.py backend/tests/test_evaluator.py
+git commit -m "feat(backend): add Gemini evaluator with band-to-grade mapping"
 ```
 
 ---
@@ -1001,10 +1177,10 @@ async def _drain(queue: asyncio.Queue) -> list[tuple[str, dict]]:
     return events
 
 
-async def test_matched_on_first_attempt(monkeypatch):
+async def test_appropriate_on_first_attempt(monkeypatch):
     gen = AsyncMock(return_value="story1")
     eva = AsyncMock(
-        return_value=EvalResult(matched=True, predicted_grade="3", feedback="ok")
+        return_value=EvalResult(appropriate=True, predicted_grade="3", feedback="ok")
     )
     queue: asyncio.Queue = asyncio.Queue()
 
@@ -1019,18 +1195,18 @@ async def test_matched_on_first_attempt(monkeypatch):
     events = await _drain(queue)
     kinds = [k for k, _ in events]
     assert kinds == ["started", "attempt", "done"]
-    assert events[-1][1]["matched"] is True
+    assert events[-1][1]["appropriate"] is True
     assert events[-1][1]["attempts"] == 1
     assert gen.await_count == 1
 
 
-async def test_matched_after_two_mismatches(monkeypatch):
+async def test_appropriate_after_two_mismatches(monkeypatch):
     gen = AsyncMock(side_effect=["v1", "v2", "v3"])
     eva = AsyncMock(
         side_effect=[
-            EvalResult(matched=False, predicted_grade="5", feedback="too hard"),
-            EvalResult(matched=False, predicted_grade="4", feedback="still hard"),
-            EvalResult(matched=True, predicted_grade="3", feedback="ok"),
+            EvalResult(appropriate=False, predicted_grade="5", feedback="too hard"),
+            EvalResult(appropriate=False, predicted_grade="4", feedback="still hard"),
+            EvalResult(appropriate=True, predicted_grade="3", feedback="ok"),
         ]
     )
     queue: asyncio.Queue = asyncio.Queue()
@@ -1046,7 +1222,7 @@ async def test_matched_after_two_mismatches(monkeypatch):
     events = await _drain(queue)
     kinds = [k for k, _ in events]
     assert kinds == ["started", "attempt", "attempt", "attempt", "done"]
-    assert events[-1][1]["matched"] is True
+    assert events[-1][1]["appropriate"] is True
     assert events[-1][1]["attempts"] == 3
     # generator was called with feedback on attempts 2 and 3
     second_call = gen.await_args_list[1]
@@ -1059,7 +1235,7 @@ async def test_capped_at_three_attempts_returns_last_text():
     gen = AsyncMock(side_effect=["v1", "v2", "v3"])
     eva = AsyncMock(
         return_value=EvalResult(
-            matched=False, predicted_grade="5", feedback="too hard"
+            appropriate=False, predicted_grade="5", feedback="too hard"
         )
     )
     queue: asyncio.Queue = asyncio.Queue()
@@ -1074,7 +1250,7 @@ async def test_capped_at_three_attempts_returns_last_text():
 
     events = await _drain(queue)
     done = events[-1][1]
-    assert done["matched"] is False
+    assert done["appropriate"] is False
     assert done["attempts"] == 3
     assert done["text"] == "v3"
     assert gen.await_count == 3
@@ -1084,7 +1260,7 @@ async def test_evaluator_unavailable_short_circuits():
     gen = AsyncMock(side_effect=["v1", "v2", "v3"])
     eva = AsyncMock(
         return_value=EvalResult(
-            matched=False, predicted_grade=None, feedback="evaluator unavailable"
+            appropriate=False, predicted_grade=None, feedback="evaluator unavailable"
         )
     )
     queue: asyncio.Queue = asyncio.Queue()
@@ -1099,7 +1275,7 @@ async def test_evaluator_unavailable_short_circuits():
 
     events = await _drain(queue)
     done = events[-1][1]
-    assert done["matched"] is False
+    assert done["appropriate"] is False
     assert done["attempts"] == 1
     assert done["predicted_grade"] is None
     assert gen.await_count == 1  # did not burn more generations
@@ -1120,7 +1296,8 @@ import uuid
 from dataclasses import dataclass
 from typing import Awaitable, Callable
 
-from app.config import MAX_RETRIES, WORDS_PER_PAGE
+from app.config import MAX_RETRIES
+from app.pedagogy import WORDS_PER_PAGE
 from app.schemas import EvalResult
 
 GenerateFn = Callable[..., Awaitable[str]]
@@ -1155,7 +1332,7 @@ async def run_topic(
     last_text = ""
     last_predicted: str | None = None
     attempt = 0
-    matched = False
+    appropriate = False
 
     for attempt in range(1, MAX_RETRIES + 1):
         await queue.put(("attempt", {"story_id": sid, "attempt": attempt}))
@@ -1187,8 +1364,8 @@ async def run_topic(
 
         result = await evaluate(last_text, params.reading_level)
         last_predicted = result.predicted_grade
-        if result.matched:
-            matched = True
+        if result.appropriate:
+            appropriate = True
             break
         if result.feedback == "evaluator unavailable":
             break
@@ -1201,7 +1378,7 @@ async def run_topic(
                 "story_id": sid,
                 "text": last_text,
                 "predicted_grade": last_predicted,
-                "matched": matched,
+                "appropriate": appropriate,
                 "attempts": attempt,
             },
         )
@@ -1247,7 +1424,7 @@ from app.schemas import EvalResult
 async def test_run_batch_streams_events_for_all_topics(monkeypatch):
     gen = AsyncMock(return_value="story")
     eva = AsyncMock(
-        return_value=EvalResult(matched=True, predicted_grade="3", feedback="ok")
+        return_value=EvalResult(appropriate=True, predicted_grade="3", feedback="ok")
     )
     params = TopicParams(
         child_name="Maya",
@@ -1373,7 +1550,7 @@ def client(monkeypatch):
         "evaluate_grade_level",
         AsyncMock(
             return_value=EvalResult(
-                matched=True, predicted_grade="3", feedback="on level"
+                appropriate=True, predicted_grade="3", feedback="on level"
             )
         ),
     )
@@ -1797,7 +1974,8 @@ Append to `backend/tests/test_export.py`:
 ```python
 from pypdf import PdfReader
 
-from app.export import render_pdf, FONT_SIZES
+from app.export import render_pdf
+from app.pedagogy import FONT_SIZES
 
 
 def test_pdf_has_correct_page_count():
@@ -1844,9 +2022,24 @@ def test_pdf_font_size_per_reading_level():
 - [ ] **Step 2: Run, confirm failure**
 
 Run: `cd backend && uv run pytest tests/test_export.py -v`
-Expected: failures on the new tests (`render_pdf` / `FONT_SIZES` not defined).
+Expected: failures on the new tests (`render_pdf` not defined and/or `FONT_SIZES` not yet in `app.pedagogy`).
 
-- [ ] **Step 3: Implement `render_pdf`**
+- [ ] **Step 3a: Add `FONT_SIZES` to `pedagogy.py`**
+
+Insert into `backend/app/pedagogy.py`, below `WORDS_PER_PAGE`:
+
+```python
+FONT_SIZES: dict[str, int] = {
+    # Per-grade PDF body font, in points. Larger for early readers;
+    # plateaus at grade 4 because 14pt is already comfortable for grade-5
+    # text on letter-size pages.
+    "K": 24, "1": 20, "2": 18, "3": 16, "4": 14, "5": 14,
+}
+```
+
+(Remove the matching `FONT_SIZES` declaration from `export.py` if you initially added it there — there is one source of truth.)
+
+- [ ] **Step 3b: Implement `render_pdf`**
 
 Append to `backend/app/export.py`:
 
@@ -1855,9 +2048,7 @@ from reportlab.lib.pagesizes import LETTER
 from reportlab.lib.units import inch
 from reportlab.pdfgen import canvas as _canvas
 
-FONT_SIZES: dict[str, int] = {
-    "K": 24, "1": 20, "2": 18, "3": 16, "4": 14, "5": 14,
-}
+from app.pedagogy import FONT_SIZES
 
 _MARGIN = 0.75 * inch
 _BOX_FRACTION = 0.45  # drawing box occupies top 45% of page
@@ -1930,7 +2121,7 @@ Expected: all tests pass.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add backend/app/export.py backend/tests/test_export.py
+git add backend/app/export.py backend/app/pedagogy.py backend/tests/test_export.py
 git commit -m "feat(backend): add reportlab PDF renderer with layout and drawing box"
 ```
 
@@ -2299,7 +2490,7 @@ export type SseEvent =
       story_id: string;
       text: string;
       predicted_grade: string | null;
-      matched: boolean;
+      appropriate: boolean;
       attempts: number;
     }
   | { type: "error"; story_id: string | null; message: string }
@@ -2348,7 +2539,7 @@ describe("streamSse", () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValue(
       makeStream([
         'event: started\ndata: {"story_id":"a","topic":"Soccer"}\n\n',
-        'event: done\ndata: {"story_id":"a","text":"hi","predicted_grade":"3","matched":true,"attempts":1}\n\n',
+        'event: done\ndata: {"story_id":"a","text":"hi","predicted_grade":"3","appropriate":true,"attempts":1}\n\n',
         "event: complete\ndata: {}\n\n",
       ]),
     );
@@ -2789,14 +2980,14 @@ describe("StoryCard", () => {
     expect(screen.getByText(/Generating/i)).toBeInTheDocument();
   });
 
-  it("shows text and no warning when matched", () => {
+  it("shows text and no warning when appropriate", () => {
     render(
       <StoryCard
         state={{
           ...baseState,
           status: "done",
           text: "Once upon a time.",
-          matched: true,
+          appropriate: true,
           predicted_grade: "3",
           attempts: 1,
         }}
@@ -2814,14 +3005,14 @@ describe("StoryCard", () => {
     expect(screen.queryByText(/couldn't confirm/i)).not.toBeInTheDocument();
   });
 
-  it("shows the warning badge when not matched", () => {
+  it("shows the warning badge when not appropriate", () => {
     render(
       <StoryCard
         state={{
           ...baseState,
           status: "done",
           text: "Body.",
-          matched: false,
+          appropriate: false,
           predicted_grade: "5",
           attempts: 3,
         }}
@@ -2858,7 +3049,7 @@ export interface StoryCardState {
   status: "pending" | "done" | "error";
   attempts: number;
   text?: string;
-  matched?: boolean;
+  appropriate?: boolean;
   predicted_grade?: string | null;
   error?: string;
 }
@@ -2908,7 +3099,7 @@ export default function StoryCard({ state, request, onPreviewPdf }: Props) {
         <h3>
           For {request.child_name} · {state.topic}
         </h3>
-        {state.status === "done" && state.matched === false && (
+        {state.status === "done" && state.appropriate === false && (
           <span className="badge warning">
             Couldn't confirm reading level
           </span>
@@ -2976,7 +3167,7 @@ const SCRIPT: SseEvent[] = [
     type: "done",
     story_id: "a",
     text: "A body.",
-    matched: true,
+    appropriate: true,
     predicted_grade: "3",
     attempts: 1,
   },
@@ -2985,7 +3176,7 @@ const SCRIPT: SseEvent[] = [
     type: "done",
     story_id: "b",
     text: "B body.",
-    matched: false,
+    appropriate: false,
     predicted_grade: "5",
     attempts: 3,
   },
@@ -3146,7 +3337,7 @@ export default function StoryList({ events, request, onPreviewPdf }: Props) {
               ...s[ev.story_id],
               status: "done",
               text: ev.text,
-              matched: ev.matched,
+              appropriate: ev.appropriate,
               predicted_grade: ev.predicted_grade,
               attempts: ev.attempts,
             },
@@ -3244,7 +3435,7 @@ const STATE = {
   topic: "Soccer",
   status: "done" as const,
   text: "Body.",
-  matched: true,
+  appropriate: true,
   attempts: 1,
 };
 
@@ -3624,9 +3815,39 @@ git commit -m "docs: confirm end-to-end flow in README"
 
 ## Self-review notes (from the planner)
 
-- **Spec coverage check:** every component from the spec maps to a task — config + WPP (2.2), schemas (2.3), generator + prompts (3.1/3.2), evaluator with vendor submodule (1.1 + 4.1), pipeline + retries + evaluator-unavailable short-circuit (5.1), orchestrator + SSE (6.1/6.2), presets (6.2), docx (7.1), pdf with `split_into_pages` + drawing box + font sizes (8.1/8.2), single-file export route (8.3), bundle zip (9.1), RequestForm with drawing-box helper text (11.1), StoryList + bundle buttons (12.2), StoryCard with warning badge + helper text (12.1), PdfPreviewModal with embed/fallback/Esc/backdrop (13.1), App wiring (14.1), manual smoke (14.2).
-- **Tests cover all spec testing-strategy bullets:** evaluator transport retries + rubric load + "evaluator unavailable" (4.1); generator fiction-only-name and feedback-injection and word-count doubling (3.2); pipeline four key paths (5.1); api SSE event sequence and presets (6.2); docx round-trip + ignored layout fields (7.1); `split_into_pages` exact-count + sentence boundaries + balance (8.1); PDF page count + signature + drawing-box rectangle + font-size table (8.2); bundle zip filename + content (9.1); RequestForm validation + custom topics + drawing-box flag (11.1); StoryList feed + bundle calls (12.2); PdfPreviewModal flow + Esc + fallback + reuse-blob (13.1).
-- **Sequencing:** the rubric path discovery in 1.1 step 2 must be done before 4.1 implementation, otherwise `_RUBRIC_PATH` may point at the wrong file. This is called out in the 4.1 step-4 note.
+- **Spec coverage check:** every component from the spec maps to a task — Settings + retry caps (2.2 / `config.py`) and editorial constants (2.2 / `pedagogy.py`, grown by Tasks 4.1 and 8.2), schemas (2.3), generator + prompts (3.1/3.2), evaluator with v1 snapshot prompts + band-to-grade mapping + transport retries (1.1 + 4.1), pipeline + retries + evaluator-unavailable short-circuit (5.1), orchestrator + SSE (6.1/6.2), presets (6.2), docx (7.1), pdf with `split_into_pages` + drawing box + font sizes (8.1/8.2), single-file export route (8.3), bundle zip (9.1), RequestForm with drawing-box helper text (11.1), StoryList + bundle buttons (12.2), StoryCard with warning badge + helper text (12.1), PdfPreviewModal with embed/fallback/Esc/backdrop (13.1), App wiring (14.1), manual smoke (14.2).
+- **Tests cover all spec testing-strategy bullets:** evaluator band-mapping + prompt-version selectability + transport retries + "evaluator unavailable" + revision-guidance-vs-scaffolding-needed audience separation (4.1); generator fiction-only-name and feedback-injection and word-count doubling (3.2); pipeline four key paths (5.1); api SSE event sequence and presets (6.2); docx round-trip + ignored layout fields (7.1); `split_into_pages` exact-count + sentence boundaries + balance (8.1); PDF page count + signature + drawing-box rectangle + font-size table (8.2); bundle zip filename + content (9.1); RequestForm validation + custom topics + drawing-box flag (11.1); StoryList feed + bundle calls (12.2); PdfPreviewModal flow + Esc + fallback + reuse-blob (13.1).
+- **Sequencing:** the v1 rubric snapshot already lives at
+  `backend/app/evaluator_prompts/grade-level/v1/{system,user}.txt`
+  (committed during repo setup, byte-identical to upstream). Task 4.1
+  reads from there directly. The vendor submodule remains read-only.
+- **Cross-cutting refactors applied after the initial spec:** the
+  evaluator was switched from OpenAI to Gemini 2.5 Pro (via
+  `langchain-google-genai`) to match the upstream calibration. The
+  Gemini judge returns rubric *bands* (`K-1, 2-3, ...`), so Task 4.1
+  introduces a `GRADE_TO_BAND` mapping (added to `pedagogy.py` as
+  Step 0 of that task). `EvalResult.matched` was renamed to
+  `EvalResult.appropriate` everywhere it appears (schema, SSE wire,
+  frontend types, story-card state). And `WORDS_PER_PAGE` /
+  `FONT_SIZES` / `GRADE_TO_BAND` all live in `app/pedagogy.py` —
+  consumer modules import them, never redeclare.
+- **Evaluator JSON contract split into two audiences (Task 4.1):** the
+  upstream Learning Commons rubric's `scaffolding_needed` field is
+  narrowly defined as teacher-facing supports (pictures, pre-teaching,
+  read-aloud) that let students at a *lower* `alternative_grade` band
+  still engage with the text. Feeding that string back to Claude as
+  "revise the next draft" was both wrong-audience (Claude can't show a
+  picture) and asymmetric (empty when the text is too easy). The JSON
+  footer in `evaluator.py` now also asks Gemini for a separate
+  `revision_guidance` field — concrete suggestions for revising the
+  text itself, symmetric in direction. `_build_feedback` composes the
+  Claude-facing feedback string from `reasoning + alternative_grade +
+  revision_guidance` and deliberately **excludes** `scaffolding_needed`,
+  which is still parsed off the JSON for a future teacher-facing
+  surface (see docs/v2-ideas.md "Scaffolding playbook"). The
+  pipeline's contract is unchanged — it still treats `result.feedback`
+  as opaque text and `"evaluator unavailable"` as the short-circuit
+  sentinel — so no Phase 5+ code blocks need adaptation.
 
 ---
 

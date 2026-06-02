@@ -1,0 +1,190 @@
+import json
+import re
+from unittest.mock import AsyncMock
+
+import pytest
+from fastapi.testclient import TestClient
+
+import app.main as main_mod
+from app.main import app
+from app.schemas import EvalResult
+
+
+@pytest.fixture
+def client(monkeypatch):
+    monkeypatch.setattr(
+        main_mod,
+        "generate_story",
+        AsyncMock(return_value="The story body."),
+    )
+    monkeypatch.setattr(
+        main_mod,
+        "evaluate_grade_level",
+        AsyncMock(
+            return_value=EvalResult(
+                appropriate=True, predicted_grade="3", feedback="on level"
+            )
+        ),
+    )
+    return TestClient(app)
+
+
+def parse_sse(body: str) -> list[tuple[str, dict]]:
+    events: list[tuple[str, dict]] = []
+    for chunk in re.split(r"\n\n+", body.strip()):
+        if not chunk.strip():
+            continue
+        lines = chunk.splitlines()
+        ev = next((line[7:] for line in lines if line.startswith("event: ")), None)
+        data = next((line[6:] for line in lines if line.startswith("data: ")), "{}")
+        if ev:
+            events.append((ev, json.loads(data)))
+    return events
+
+
+def test_presets_returns_catalog(client):
+    response = client.get("/api/presets")
+    assert response.status_code == 200
+    body = response.json()
+    assert "Sports" in body
+    assert "Soccer" in body["Sports"]
+
+
+def test_generate_emits_full_event_sequence(client):
+    body = {
+        "child_name": "Maya",
+        "reading_level": "3",
+        "genre": "fiction",
+        "pages": 1,
+        "include_drawing_box": True,
+        "topics": ["Soccer", "Dinosaurs"],
+    }
+    with client.stream("POST", "/api/generate", json=body) as r:
+        assert r.status_code == 200
+        assert r.headers["content-type"].startswith("text/event-stream")
+        raw = "".join(r.iter_text())
+
+    events = parse_sse(raw)
+    kinds = [k for k, _ in events]
+    assert kinds.count("started") == 2
+    assert kinds.count("done") == 2
+    assert kinds[-1] == "complete"
+
+
+def test_generate_validates_input(client):
+    response = client.post(
+        "/api/generate",
+        json={
+            "child_name": "",
+            "reading_level": "3",
+            "genre": "fiction",
+            "pages": 1,
+            "topics": ["Soccer"],
+        },
+    )
+    assert response.status_code == 422
+
+
+def test_export_docx_returns_word_file(client):
+    body = {
+        "format": "docx",
+        "child_name": "Maya",
+        "topic": "The Moon",
+        "genre": "fiction",
+        "text": "Once upon a time. The end.",
+        "reading_level": "3",
+        "pages": 1,
+        "include_drawing_box": False,
+    }
+    r = client.post("/api/export", json=body)
+    assert r.status_code == 200
+    assert r.headers["content-type"].startswith(
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    )
+    assert "Maya_The_Moon.docx" in r.headers["content-disposition"]
+
+
+def test_export_pdf_returns_pdf_bytes(client):
+    body = {
+        "format": "pdf",
+        "child_name": "Maya",
+        "topic": "Soccer",
+        "genre": "fiction",
+        "text": "Once. Twice. Thrice.",
+        "reading_level": "3",
+        "pages": 1,
+        "include_drawing_box": True,
+    }
+    r = client.post("/api/export", json=body)
+    assert r.status_code == 200
+    assert r.headers["content-type"] == "application/pdf"
+    assert r.content[:4] == b"%PDF"
+    assert "Maya_Soccer.pdf" in r.headers["content-disposition"]
+
+
+def test_preview_returns_token_and_filename_then_serves_pdf(client):
+    from app import preview_cache
+
+    preview_cache.clear()
+    body = {
+        "format": "pdf",
+        "child_name": "Maya",
+        "topic": "Soccer",
+        "genre": "fiction",
+        "text": "Once. Twice.",
+        "reading_level": "3",
+        "pages": 1,
+        "include_drawing_box": False,
+    }
+    r = client.post("/api/export/preview", json=body)
+    assert r.status_code == 200
+    payload = r.json()
+    assert payload["filename"] == "Maya_Soccer.pdf"
+    token = payload["token"]
+    assert token
+
+    g = client.get(f"/api/export/preview/{payload['filename']}", params={"token": token})
+    assert g.status_code == 200
+    assert g.headers["content-type"] == "application/pdf"
+    assert g.content[:4] == b"%PDF"
+    disposition = g.headers["content-disposition"]
+    assert "inline" in disposition
+    assert 'filename="Maya_Soccer.pdf"' in disposition
+
+
+def test_preview_unknown_token_returns_404(client):
+    from app import preview_cache
+
+    preview_cache.clear()
+    g = client.get("/api/export/preview/whatever.pdf", params={"token": "nope"})
+    assert g.status_code == 404
+
+
+def test_export_bundle_returns_zip(client):
+    body = {
+        "format": "docx",
+        "stories": [
+            {
+                "child_name": "Maya",
+                "topic": "Soccer",
+                "genre": "fiction",
+                "text": "One. Two.",
+                "reading_level": "3",
+                "pages": 1,
+                "include_drawing_box": False,
+            },
+            {
+                "child_name": "Maya",
+                "topic": "Dinosaurs",
+                "genre": "fiction",
+                "text": "One. Two.",
+                "reading_level": "3",
+                "pages": 1,
+                "include_drawing_box": False,
+            },
+        ],
+    }
+    r = client.post("/api/export/bundle", json=body)
+    assert r.status_code == 200
+    assert r.headers["content-type"] == "application/zip"
+    assert "Maya_stories.zip" in r.headers["content-disposition"]

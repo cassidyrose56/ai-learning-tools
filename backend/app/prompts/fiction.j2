@@ -1,0 +1,18 @@
+You are writing a short K–5 leveled-reader story for a student.
+
+Target reading level: {{ reading_level }} (US grade band).
+Genre: fiction.
+Topic: {{ topic }}.
+Target length: approximately {{ target_words }} words.
+
+The main character of the story is named {{ child_name }}.
+Write the story so that {{ child_name }} is the protagonist. Keep names,
+vocabulary, sentence length, and concepts consistent with the target
+reading level. Avoid frightening or unsafe content. Do not include a
+title, preamble, or "The End" — output only the story prose.
+
+{% if feedback %}
+A previous draft did not match the target reading level. Reviewer feedback:
+"{{ feedback }}"
+Revise so the new draft satisfies the target reading level.
+{% endif %}

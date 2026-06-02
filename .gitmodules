@@ -1,0 +1,3 @@
+[submodule "vendor/evaluators"]
+	path = vendor/evaluators
+	url = https://github.com/learning-commons-org/evaluators
