@@ -226,7 +226,7 @@ export default function RequestForm({ onSubmit }: Props) {
           <span className="drawing-box-text">
             <strong>Add a drawing box</strong>
             <span className="drawing-box-help">
-              Adds a blank box at the top of the page for the student to draw a picture of the story. PDF downloads only; Word downloads are plain text.
+              Adds a blank box at the top of the page for the student to draw a picture of the story. These boxes only show up in PDF downloads; Word downloads are plain text, and can be formatted by you in Google Docs or Microsoft Word.
             </span>
           </span>
         </label>

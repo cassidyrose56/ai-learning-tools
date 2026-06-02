@@ -60,6 +60,9 @@ export default function StoryCard({ state, request, onPreviewPdf, onDismiss }: P
           For {request.child_name} · {state.topic}
         </h3>
         <div className="card-header-actions">
+          <span className="badge level">
+            Reading level: {request.reading_level === "K" ? "K" : `Grade ${request.reading_level}`}
+          </span>
           {state.status === "done" && state.appropriate === false && (
             <span className="badge warning">
               Couldn't confirm reading level

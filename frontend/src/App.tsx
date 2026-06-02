@@ -1,10 +1,17 @@
 import { useEffect, useState } from "react";
-import RequestForm from "./components/RequestForm";
-import StoryList, { type CardEntry } from "./components/StoryList";
+import {
+  NavLink,
+  Navigate,
+  Route,
+  Routes,
+  useLocation,
+} from "react-router-dom";
+import GeneratorView from "./components/GeneratorView";
+import AboutPage from "./AboutPage";
 import SessionStreamer, {
   type SessionLike,
 } from "./components/SessionStreamer";
-import PdfPreviewModal from "./components/PdfPreviewModal";
+import type { CardEntry } from "./components/StoryList";
 import { streamSse } from "./lib/sse";
 import type { GenerateRequest } from "./types";
 import type { StoryCardState } from "./components/StoryCard";
@@ -40,6 +47,11 @@ export default function App() {
     request: GenerateRequest;
   } | null>(null);
   const [theme, setThemeState] = useState<Theme | null>(getInitialTheme);
+  const location = useLocation();
+
+  useEffect(() => {
+    if (location.pathname !== "/") setPreviewStory(null);
+  }, [location.pathname]);
 
   useEffect(() => {
     if (theme === null) return;
@@ -121,11 +133,17 @@ export default function App() {
     <main className="page">
       <header className="app-header">
         <div className="app-header-text">
-          <h1>AI Learning Tools</h1>
+          <h1>K-5 Story Generator</h1>
           <p className="tagline">
-            Short reading-practice stories for kids who are learning to read.
+            Create short stories for kids who are learning to read.
           </p>
         </div>
+        <nav className="app-nav" aria-label="Primary">
+          <NavLink to="/" end>
+            Generator
+          </NavLink>
+          <NavLink to="/about">About</NavLink>
+        </nav>
         <button
           type="button"
           className="theme-toggle"
@@ -136,11 +154,38 @@ export default function App() {
               : "Switch to dark theme"
           }
         >
-          {effectiveTheme === "dark" ? "Switch to light" : "Switch to dark"}
+          {effectiveTheme === "dark" ? (
+            <svg
+              width="18"
+              height="18"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+            >
+              <circle cx="12" cy="12" r="4" />
+              <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41" />
+            </svg>
+          ) : (
+            <svg
+              width="18"
+              height="18"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M21 12.79A9 9 0 1 1 11.21 3a7 7 0 0 0 9.79 9.79z" />
+            </svg>
+          )}
         </button>
       </header>
-
-      <RequestForm onSubmit={handleSubmit} />
 
       {sessions.map((s) => (
         <SessionStreamer
@@ -151,22 +196,25 @@ export default function App() {
         />
       ))}
 
-      <StoryList
-        entries={entries}
-        onPreviewPdf={(story, request) =>
-          setPreviewStory({ story, request })
-        }
-        onDismiss={dismissStory}
-      />
-
-      {previewStory && (
-        <PdfPreviewModal
-          open
-          story={previewStory.story}
-          request={previewStory.request}
-          onClose={() => setPreviewStory(null)}
+      <Routes>
+        <Route
+          path="/"
+          element={
+            <GeneratorView
+              entries={entries}
+              previewStory={previewStory}
+              onSubmit={handleSubmit}
+              onDismiss={dismissStory}
+              onPreviewPdf={(story, request) =>
+                setPreviewStory({ story, request })
+              }
+              onClosePreview={() => setPreviewStory(null)}
+            />
+          }
         />
-      )}
+        <Route path="/about" element={<AboutPage />} />
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
     </main>
   );
 }

@@ -356,6 +356,12 @@ section .bundle-actions {
   border: 1px solid var(--warning-border);
 }
 
+.badge.level {
+  background: var(--surface-2);
+  color: var(--ink-muted);
+  border: 1px solid var(--border);
+}
+
 .story-text {
   font-family: var(--serif);
   font-size: 1.0625rem;
@@ -676,8 +682,12 @@ section .bundle-actions {
   background: transparent;
   border: 1px solid var(--border-strong);
   color: var(--ink-muted);
-  padding: 6px 12px;
-  font-size: 0.9rem;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   border-radius: var(--radius-pill);
 }
 
@@ -699,4 +709,35 @@ section .bundle-actions {
   display: flex;
   flex-direction: column;
   gap: 10px;
+}
+
+.app-nav {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+}
+
+.app-nav a {
+  color: inherit;
+  text-decoration: none;
+  padding-bottom: 2px;
+  border-bottom: 2px solid transparent;
+  font-size: 0.95rem;
+  font-weight: 500;
+}
+
+.app-nav a:hover {
+  color: var(--ink);
+}
+
+.app-nav a[aria-current="page"] {
+  font-weight: 600;
+  border-bottom-color: currentColor;
+}
+
+@media (max-width: 640px) {
+  .app-nav {
+    order: 3;
+    flex-basis: 100%;
+  }
 }

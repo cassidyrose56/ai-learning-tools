@@ -1,9 +1,33 @@
 import { StrictMode } from "react";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it, vi } from "vitest";
+import { MemoryRouter } from "react-router-dom";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
-import type { SseEvent } from "./types";
+
+const sseGate = vi.hoisted(() => {
+  let resolve: (() => void) | null = null;
+  let promise: Promise<void> = Promise.resolve();
+  return {
+    open() {
+      promise = new Promise<void>((r) => {
+        resolve = r;
+      });
+    },
+    release() {
+      const r = resolve;
+      resolve = null;
+      r?.();
+    },
+    get current() {
+      return promise;
+    },
+    reset() {
+      resolve = null;
+      promise = Promise.resolve();
+    },
+  };
+});
 
 vi.mock("./lib/sse", () => {
   let counter = 0;
@@ -12,23 +36,25 @@ vi.mock("./lib/sse", () => {
       counter += 1;
       const id = `s${counter}`;
       const topic = counter === 1 ? "Soccer" : "Dinosaurs";
-      const script: SseEvent[] = [
-        { type: "started", story_id: id, topic },
-        {
+      return (async function* () {
+        yield { type: "started", story_id: id, topic };
+        await sseGate.current;
+        yield {
           type: "done",
           story_id: id,
           text: "body",
           appropriate: true,
           predicted_grade: "3",
           attempts: 1,
-        },
-        { type: "complete" },
-      ];
-      return (async function* () {
-        for (const ev of script) yield ev;
+        };
+        yield { type: "complete" };
       })();
     }),
   };
+});
+
+beforeEach(() => {
+  sseGate.reset();
 });
 
 const PRESETS = { Sports: ["Soccer"], Animals: ["Dinosaurs"] };
@@ -58,7 +84,11 @@ async function submitFor(name: string, topic: string) {
 describe("App consolidated story list", () => {
   it("renders one card per submission across kids, newest first, and a single bundle", async () => {
     mockPresets();
-    render(<App />);
+    render(
+      <MemoryRouter initialEntries={["/"]}>
+        <App />
+      </MemoryRouter>,
+    );
     await waitFor(() =>
       expect(screen.getByRole("button", { name: /^Sports$/ })).toBeInTheDocument(),
     );
@@ -91,7 +121,11 @@ describe("App consolidated story list", () => {
 
   it("removing a card calls dismiss; that card is gone", async () => {
     mockPresets();
-    render(<App />);
+    render(
+      <MemoryRouter initialEntries={["/"]}>
+        <App />
+      </MemoryRouter>,
+    );
     await waitFor(() =>
       expect(screen.getByRole("button", { name: /^Sports$/ })).toBeInTheDocument(),
     );
@@ -128,7 +162,9 @@ describe("App consolidated story list", () => {
     mockPresets();
     render(
       <StrictMode>
-        <App />
+        <MemoryRouter initialEntries={["/"]}>
+          <App />
+        </MemoryRouter>
       </StrictMode>,
     );
     await waitFor(() =>
@@ -140,5 +176,173 @@ describe("App consolidated story list", () => {
     await waitFor(() =>
       expect(screen.getByRole("heading", { name: /For Maya/i })).toBeInTheDocument(),
     );
+  });
+});
+
+describe("App routing", () => {
+  it("renders About content at /about and does not render the generator form", async () => {
+    mockPresets();
+    render(
+      <MemoryRouter initialEntries={["/about"]}>
+        <App />
+      </MemoryRouter>,
+    );
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole("heading", { name: /Hi, I'm Cassidy/ }),
+      ).toBeInTheDocument(),
+    );
+    expect(
+      screen.queryByRole("button", { name: /generate/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("clicking the About nav link from / shows About and hides the generator", async () => {
+    mockPresets();
+    render(
+      <MemoryRouter initialEntries={["/"]}>
+        <App />
+      </MemoryRouter>,
+    );
+
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: /generate/i })).toBeInTheDocument(),
+    );
+
+    await userEvent.click(screen.getByRole("link", { name: /^About$/ }));
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole("heading", { name: /Hi, I'm Cassidy/ }),
+      ).toBeInTheDocument(),
+    );
+    expect(
+      screen.queryByRole("button", { name: /generate/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("returning from /about preserves generated stories", async () => {
+    mockPresets();
+    render(
+      <MemoryRouter initialEntries={["/"]}>
+        <App />
+      </MemoryRouter>,
+    );
+
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: /^Sports$/ })).toBeInTheDocument(),
+    );
+
+    await submitFor("Maya", "Soccer");
+    await waitFor(() =>
+      expect(screen.getByRole("heading", { name: /For Maya/i })).toBeInTheDocument(),
+    );
+
+    await userEvent.click(screen.getByRole("link", { name: /^About$/ }));
+    await waitFor(() =>
+      expect(
+        screen.getByRole("heading", { name: /Hi, I'm Cassidy/ }),
+      ).toBeInTheDocument(),
+    );
+    expect(
+      screen.queryByRole("heading", { name: /For Maya/i }),
+    ).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("link", { name: /^Generator$/ }));
+    await waitFor(() =>
+      expect(screen.getByRole("heading", { name: /For Maya/i })).toBeInTheDocument(),
+    );
+  });
+
+  it("in-flight stream completes while user is on /about", async () => {
+    mockPresets();
+    sseGate.open();
+    render(
+      <MemoryRouter initialEntries={["/"]}>
+        <App />
+      </MemoryRouter>,
+    );
+
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: /^Sports$/ })).toBeInTheDocument(),
+    );
+
+    await submitFor("Maya", "Soccer");
+    await waitFor(() =>
+      expect(screen.getByRole("heading", { name: /For Maya/i })).toBeInTheDocument(),
+    );
+    // Card is in pending state (gate not released yet).
+    expect(screen.getByRole("status")).toHaveAttribute("aria-busy", "true");
+
+    await userEvent.click(screen.getByRole("link", { name: /^About$/ }));
+    await waitFor(() =>
+      expect(
+        screen.getByRole("heading", { name: /Hi, I'm Cassidy/ }),
+      ).toBeInTheDocument(),
+    );
+
+    sseGate.release();
+
+    await userEvent.click(screen.getByRole("link", { name: /^Generator$/ }));
+    // After the round trip, the done event should have landed.
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: /Download as PDF/i }),
+      ).toBeInTheDocument(),
+    );
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+  });
+
+  it("navigating to /about clears an open PDF preview so it does not reopen on return", async () => {
+    mockPresets();
+    render(
+      <MemoryRouter initialEntries={["/"]}>
+        <App />
+      </MemoryRouter>,
+    );
+
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: /^Sports$/ })).toBeInTheDocument(),
+    );
+
+    await submitFor("Maya", "Soccer");
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: /Download as PDF/i })).toBeInTheDocument(),
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: /Download as PDF/i }));
+    await waitFor(() =>
+      expect(screen.getByRole("dialog")).toBeInTheDocument(),
+    );
+
+    await userEvent.click(screen.getByRole("link", { name: /^About$/ }));
+    await waitFor(() =>
+      expect(
+        screen.getByRole("heading", { name: /Hi, I'm Cassidy/ }),
+      ).toBeInTheDocument(),
+    );
+
+    await userEvent.click(screen.getByRole("link", { name: /^Generator$/ }));
+    await waitFor(() =>
+      expect(screen.getByRole("heading", { name: /For Maya/i })).toBeInTheDocument(),
+    );
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("unknown paths redirect to /", async () => {
+    mockPresets();
+    render(
+      <MemoryRouter initialEntries={["/totally-bogus"]}>
+        <App />
+      </MemoryRouter>,
+    );
+
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: /generate/i })).toBeInTheDocument(),
+    );
+    expect(
+      screen.queryByRole("heading", { name: /Hi, I'm Cassidy/ }),
+    ).not.toBeInTheDocument();
   });
 });
