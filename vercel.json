@@ -10,5 +10,8 @@
             "routePrefix": "/_/backend",
             "framework": "fastapi"
         }
-    }
+    },
+    "rewrites": [
+        { "source": "/api/:path*", "destination": "/_/backend/api/:path*" }
+    ]
 }
