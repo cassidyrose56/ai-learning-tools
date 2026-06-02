@@ -1,8 +1,50 @@
 # AI Learning Tools
 
-K-5 reading material generator. See
-`docs/superpowers/specs/2026-05-30-learning-tools-design.md` for the design
-spec.
+K-5 reading material generator. A teacher or parent enters a student's name,
+target reading level (K through 5), genre (fiction or non-fiction), page
+count, and one or more topics. The app generates a personalized short story
+per topic, checks that each story actually lands at the target grade level,
+and lets the user download the results as Word or PDF — individually or as
+a bundled zip.
+
+See `docs/superpowers/specs/2026-05-30-learning-tools-design.md` for the
+full design spec.
+
+## How it works
+
+For each topic, the backend runs a **generate → evaluate → revise** loop:
+
+1. **Generate** — Claude Sonnet 4.6 (`anthropic` SDK) writes a story from a
+   Jinja-templated prompt. Word count is derived from the chosen page count
+   and reading level (with a smaller target when a drawing box is included).
+2. **Evaluate** — Gemini 2.5 Pro (`langchain-google-genai`) grades the
+   draft against the target reading level using a rubric prompt vendored
+   from the [Learning Commons evaluators](https://github.com/learning-commons-org/evaluators)
+   repo. The judge returns a predicted grade band plus revision guidance.
+3. **Revise** — if the predicted band misses the target, the evaluator's
+   revision guidance is fed back to Claude for another attempt (up to
+   `MAX_RETRIES`). If the evaluator is unavailable or can't confirm the
+   level after retries, the story is still surfaced with a soft "Couldn't
+   confirm reading level" badge.
+
+Per-topic progress streams to the frontend (React 19 + Vite) so each story
+card resolves independently. Finished stories are exported via
+`python-docx` (Word) and `reportlab` (PDF); bundles are zipped server-side.
+
+The evaluator rubric is pinned in-tree at
+`backend/app/evaluator_prompts/grade-level/v1/` as a byte-for-byte snapshot
+of the upstream Learning Commons prompt, so we can fork a `v2/` variant
+without mutating the submodule. See [Updating the evaluator rubric](#updating-the-evaluator-rubric)
+below.
+
+### Stack at a glance
+
+- **Backend:** FastAPI, Python 3.12, `uv`
+- **Frontend:** React 19, Vite, TypeScript
+- **Story generation:** Claude Sonnet 4.6 via the `anthropic` SDK
+- **Grade-level evaluation:** Gemini 2.5 Pro via `langchain-google-genai`,
+  with prompts from [learning-commons-org/evaluators](https://github.com/learning-commons-org/evaluators)
+- **Export:** `python-docx` (Word), `reportlab` (PDF)
 
 ## Setup
 
