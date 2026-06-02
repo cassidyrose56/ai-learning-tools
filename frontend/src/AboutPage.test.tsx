@@ -6,13 +6,13 @@ import AboutPage from "./AboutPage";
 describe("AboutPage", () => {
   it("renders without crashing and shows the first heading", () => {
     render(<AboutPage />);
-    expect(screen.getByText(/Hi, I'm Cassidy\./)).toBeInTheDocument();
+    expect(screen.getByText(/I'm Cassidy/)).toBeInTheDocument();
   });
 
   it("renders all four section headings as level-2 headings", () => {
     render(<AboutPage />);
     expect(
-      screen.getByRole("heading", { level: 2, name: "Hi, I'm Cassidy." }),
+      screen.getByRole("heading", { level: 2, name: /I'm Cassidy/ }),
     ).toBeInTheDocument();
     expect(
       screen.getByRole("heading", { level: 2, name: "Why I made this" }),

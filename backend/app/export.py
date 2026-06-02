@@ -34,7 +34,6 @@ def safe_filename(child_name: str, topic: str) -> str:
 
 def render_docx(story: StoryInput) -> bytes:
     doc = Document()
-    doc.add_heading(f'For {story.child_name}: "{story.topic}"', level=1)
     for para in [p.strip() for p in story.text.split("\n\n") if p.strip()]:
         doc.add_paragraph(para)
     buf = io.BytesIO()

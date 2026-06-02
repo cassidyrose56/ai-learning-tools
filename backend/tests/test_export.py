@@ -26,12 +26,18 @@ def make_story(**over):
     return StoryInput(**base)
 
 
-def test_docx_contains_title_and_body():
+def test_docx_contains_body():
     blob = render_docx(make_story())
     doc = Document(io.BytesIO(blob))
     paragraphs = [p.text for p in doc.paragraphs if p.text]
-    assert any("For Maya" in p and "Soccer" in p for p in paragraphs)
     assert any("Once upon a time" in p for p in paragraphs)
+
+
+def test_docx_has_no_title_heading():
+    blob = render_docx(make_story())
+    doc = Document(io.BytesIO(blob))
+    titles = [p.text for p in doc.paragraphs if p.text]
+    assert not any("For Maya" in t for t in titles)
 
 
 def test_docx_ignores_layout_fields_without_error():
@@ -146,14 +152,6 @@ def test_pdf_line_spacing_per_reading_level():
     assert LINE_SPACING == {
         "K": 1.8, "1": 1.7, "2": 1.6, "3": 1.55, "4": 1.5, "5": 1.5,
     }
-
-
-def test_docx_title_uses_colon_not_em_dash():
-    blob = render_docx(make_story(child_name="Maya", topic="Soccer"))
-    doc = Document(io.BytesIO(blob))
-    titles = [p.text for p in doc.paragraphs if p.text]
-    assert any('For Maya: "Soccer"' in t for t in titles)
-    assert not any("—" in t for t in titles)
 
 
 def test_pdf_preserves_paragraph_breaks(monkeypatch):

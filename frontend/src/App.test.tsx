@@ -190,7 +190,7 @@ describe("App routing", () => {
 
     await waitFor(() =>
       expect(
-        screen.getByRole("heading", { name: /Hi, I'm Cassidy/ }),
+        screen.getByRole("heading", { name: /I'm Cassidy/ }),
       ).toBeInTheDocument(),
     );
     expect(
@@ -214,7 +214,7 @@ describe("App routing", () => {
 
     await waitFor(() =>
       expect(
-        screen.getByRole("heading", { name: /Hi, I'm Cassidy/ }),
+        screen.getByRole("heading", { name: /I'm Cassidy/ }),
       ).toBeInTheDocument(),
     );
     expect(
@@ -242,7 +242,7 @@ describe("App routing", () => {
     await userEvent.click(screen.getByRole("link", { name: /^About$/ }));
     await waitFor(() =>
       expect(
-        screen.getByRole("heading", { name: /Hi, I'm Cassidy/ }),
+        screen.getByRole("heading", { name: /I'm Cassidy/ }),
       ).toBeInTheDocument(),
     );
     expect(
@@ -278,7 +278,7 @@ describe("App routing", () => {
     await userEvent.click(screen.getByRole("link", { name: /^About$/ }));
     await waitFor(() =>
       expect(
-        screen.getByRole("heading", { name: /Hi, I'm Cassidy/ }),
+        screen.getByRole("heading", { name: /I'm Cassidy/ }),
       ).toBeInTheDocument(),
     );
 
@@ -319,7 +319,7 @@ describe("App routing", () => {
     await userEvent.click(screen.getByRole("link", { name: /^About$/ }));
     await waitFor(() =>
       expect(
-        screen.getByRole("heading", { name: /Hi, I'm Cassidy/ }),
+        screen.getByRole("heading", { name: /I'm Cassidy/ }),
       ).toBeInTheDocument(),
     );
 
@@ -342,7 +342,7 @@ describe("App routing", () => {
       expect(screen.getByRole("button", { name: /generate/i })).toBeInTheDocument(),
     );
     expect(
-      screen.queryByRole("heading", { name: /Hi, I'm Cassidy/ }),
+      screen.queryByRole("heading", { name: /I'm Cassidy/ }),
     ).not.toBeInTheDocument();
   });
 });

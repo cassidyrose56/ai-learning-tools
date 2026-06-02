@@ -68,7 +68,7 @@ describe("RequestForm", () => {
     );
 
     expect(
-      screen.getByText(/PDF downloads only/i),
+      screen.getByText(/only show up in PDF downloads/i),
     ).toBeInTheDocument();
 
     await userEvent.type(screen.getByLabelText(/student.*name/i), "Maya");
