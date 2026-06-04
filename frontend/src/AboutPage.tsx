@@ -57,8 +57,12 @@ export default function AboutPage() {
           >
             Learning Commons
           </a>
-          , an open source project by CZI that publishes evaluators for education content.
-          The grade-level rubric on that page is the same one this app uses.
+          , an open source initiative from the Chan Zuckerberg Initiative (CZI)
+          that builds shared infrastructure for AI in education - things like
+          curriculum-aligned datasets, content standards, model guidance, and
+          tooling for educators and developers. Evaluators for education
+          content are one piece of that broader effort, and the grade-level
+          rubric this app uses comes from that work.
         </p>
       </section>
 
