@@ -1,5 +1,7 @@
 # AI Learning Tools
 
+Check out a full writeup of this app on my Substack! https://cassidycoombs.substack.com/p/k-5-story-generator-my-latest-project
+
 K-5 reading material generator. A teacher or parent enters a student's name,
 target reading level (K through 5), genre (fiction or non-fiction), page
 count, and one or more topics. The app generates a personalized short story
